@@ -1,0 +1,19 @@
+.steps {
+  display: flex;
+  background: var(--bg2);
+  border: 1.5px solid var(--border2);
+  border-radius: var(--r);
+  overflow: hidden;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 8px rgba(0,160,114,.06);
+}
+.stp {
+  flex: 1; padding: 10px 4px; text-align: center;
+  font-family: var(--mono); font-size: 10px; color: var(--text3);
+  border-right: 1px solid var(--border); transition: all .3s;
+  font-weight: 500;
+}
+.stp:last-child { border-right: none; }
+.active { background: var(--surface); color: var(--accent); font-weight: 700; }
+.done { color: var(--green); background: rgba(0,184,148,.06); }
+.num { display: block; font-size: 9px; opacity: .6; margin-bottom: 2px; }

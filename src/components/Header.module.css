@@ -1,0 +1,47 @@
+.hdr {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0 24px;
+  border-bottom: 1.5px solid var(--border2);
+  margin-bottom: 24px;
+}
+.logo {
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 14px; font-weight: 700;
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(0,168,114,.3);
+}
+.name { font-family: var(--serif); font-size: 21px; font-weight: 600; color: var(--text); }
+.pill {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11px; color: var(--accent);
+  padding: 5px 12px; border-radius: 20px;
+  background: rgba(0,168,114,.08);
+  border: 1.5px solid rgba(0,168,114,.2);
+  font-weight: 500;
+}
+.pulse {
+  display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+.doctorInfo {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text2); font-weight: 500;
+}
+.doctorAvatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--surface); border: 1.5px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+@keyframes pulse {
+  0%,100% { opacity: .4; transform: scale(.8); }
+  50%      { opacity: 1;  transform: scale(1.1); }
+}
