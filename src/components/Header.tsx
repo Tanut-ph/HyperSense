@@ -1,30 +1,19 @@
 'use client'
 
 import styles from './Header.module.css'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-export default function Header({ doctorName }: { doctorName?: string }) {
-  const router = useRouter()
-
+export default function Header({ doctorName, onLogout }: { doctorName?: string; onLogout?: () => void }) {
   const handleLogout = async () => {
-    if (!supabase) return
- 
-    await supabase.auth.signOut()
-    router.replace('/login')
+    if (supabase) await supabase.auth.signOut()
+    onLogout?.()
   }
 
   return (
     <div className={styles.hdr}>
       <div className={styles.logo}>Gx</div>
 
-      <div
-        className={styles.name}
-        onClick={handleLogout}
-        style={{ cursor: 'pointer' }}
-      >
-        GenomeMed AI
-      </div>
+      <div className={styles.name}>GenomeMed AI</div>
 
       {doctorName && (
         <div className={styles.doctorInfo}>
@@ -37,6 +26,12 @@ export default function Header({ doctorName }: { doctorName?: string }) {
         <span className={styles.pulse} />
         AI LIVE
       </div>
+
+      {onLogout && (
+        <button className={styles.logoutBtn} onClick={handleLogout}>
+          ออกจากระบบ
+        </button>
+      )}
     </div>
   )
 }

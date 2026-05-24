@@ -7,10 +7,12 @@ export default function SearchPage({
   onSearch,
   loading = false,
   error = '',
+  onBack,
 }: {
   onSearch: (params: { patientCode?: string; nationalId?: string }) => void
   loading?: boolean
   error?: string
+  onBack?: () => void
 }) {
   const [pid, setPid] = useState('')
   const [nid, setNid] = useState('')
@@ -55,6 +57,9 @@ export default function SearchPage({
       )}
 
       <BtnRow>
+        {onBack && (
+          <button className={styles.btnS} onClick={onBack}>← กลับ</button>
+        )}
         <button className={styles.btnP} onClick={search} disabled={loading}>
           {loading ? 'กำลังค้นหา...' : 'ค้นหาผู้ป่วย →'}
         </button>

@@ -79,6 +79,12 @@ export default function Home() {
     setVcfDone(false); setConfirmData({}); setSearchError('')
   }
 
+  const handleLogout = () => {
+    setLoggedIn(false)
+    setDoctorName('')
+    reset()
+  }
+
   if (!loggedIn) {
     return (
       <main style={{ position: 'relative', zIndex: 1, maxWidth: 860, margin: '0 auto', padding: '20px 16px 80px' }}>
@@ -90,12 +96,12 @@ export default function Home() {
 
   return (
     <main style={{ position: 'relative', zIndex: 1, maxWidth: 900, margin: '0 auto', padding: '20px 16px 80px' }}>
-      <Header doctorName={doctorName} />
+      <Header doctorName={doctorName} onLogout={handleLogout} />
       <StepIndicator step={step} mode={mode} />
 
       {/* Step 1: Search */}
       {step === 1 && (
-        <SearchPage onSearch={handleSearch} loading={searchLoading} error={searchError} />
+        <SearchPage onSearch={handleSearch} loading={searchLoading} error={searchError} onBack={handleLogout} />
       )}
 
       {/* Step 2: Patient Info */}
@@ -126,7 +132,7 @@ export default function Home() {
         <AnalysisPage patient={patient} onBack={() => go(4)} onNext={handleAnalysisNext} />
       )}
       {step === 5 && mode === 'refer' && (
-        <ConfirmPage mode={mode} data={confirmData} onReset={reset} />
+        <ConfirmPage mode={mode} data={confirmData} onReset={reset} onBack={() => go(4)} />
       )}
 
       {/* Step 6: Treatment table (analyze only) */}
@@ -141,7 +147,7 @@ export default function Home() {
 
       {/* Step 8: Confirm (analyze only) */}
       {step === 8 && mode === 'analyze' && (
-        <ConfirmPage mode={mode} data={confirmData} onReset={reset} />
+        <ConfirmPage mode={mode} data={confirmData} onReset={reset} onBack={() => go(7)} />
       )}
     </main>
   )

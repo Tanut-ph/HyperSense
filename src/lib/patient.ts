@@ -122,7 +122,7 @@ export async function findPatient(params: { patientCode?: string; nationalId?: s
 
   const db = assertSupabaseConnected()
 
-  let query = db.from('patients').select('*')
+  let query = db.from('patients').select('*, patient_histories(*)')
 
   if (patientCode) {
     query = query.eq('patient_code', patientCode)

@@ -9,10 +9,12 @@ export default function ConfirmPage({
   mode,
   data,
   onReset,
+  onBack,
 }: {
   mode: Mode
   data: Record<string, string>
   onReset: () => void
+  onBack?: () => void
 }) {
   const [saving, setSaving] = useState(false)
   const [savedId, setSavedId] = useState<string | null>(null)
@@ -144,6 +146,9 @@ export default function ConfirmPage({
       )}
 
       <BtnRow>
+        {onBack && (
+          <button className={styles.btnS} onClick={onBack} disabled={saving}>← กลับ</button>
+        )}
         <button className={styles.btnS} onClick={handleNewPatient} disabled={saving}>
           {saving ? 'กำลังบันทึก...' : 'เริ่มผู้ป่วยใหม่'}
         </button>
