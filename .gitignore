@@ -1,5 +1,33 @@
-node_modules/
-.next/
-.env.local
+﻿# Virtual environments
 .venv/
 ml/.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+ml/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Trained model files (ใหญ่เกิน - เก็บแยกใน Cloud Storage หรือ Git LFS)
+ml/models/*.joblib
+ml/models/*.pkl
+ml/models/*.bin
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Environment
+.env.local
+.env
+
+# Build artifacts
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
