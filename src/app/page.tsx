@@ -15,12 +15,14 @@ import SummaryPage        from '@/components/SummaryPage'
 import { calculateRisk }               from '@/lib/riskEngine'
 import { getMedicationRecommendation } from '@/lib/medicationEngine'
 import type { CardioPatient, BPVisit, RiskResult, MedRecommendation, PatientLab } from '@/lib/types'
+import styles from '@/components/HyperSense.module.css'
 
 export default function Home() {
   const [loggedIn,    setLoggedIn]    = useState(false)
   const [doctorName,  setDoctorName]  = useState('')
   const [userRole,    setUserRole]    = useState<UserRole>('doctor')
   const [step,        setStep]        = useState<CardioStep>(1)
+  const [roleDone,    setRoleDone]    = useState(false)
 
   const [basePatient, setBasePatient] = useState<CardioPatient | null>(null)
   const [newBPVisit,  setNewBPVisit]  = useState<BPVisit | null>(null)
@@ -42,24 +44,22 @@ export default function Home() {
   }
 
   const handleLogin = (name: string, role: UserRole) => {
-    setDoctorName(name)
-    setUserRole(role)
-    setLoggedIn(true)
-    go(2)
+    setDoctorName(name); setUserRole(role); setLoggedIn(true); go(2)
   }
 
   const handleLogout = () => {
     setLoggedIn(false); setDoctorName(''); setStep(1); setUserRole('doctor')
-    setBasePatient(null); setNewBPVisit(null)
-    setRiskResult(null); setMedRec(null)
+    setBasePatient(null); setNewBPVisit(null); setNewLabs(null)
+    setRiskResult(null); setMedRec(null); setRoleDone(false)
   }
 
   const handlePatientFound = (p: CardioPatient) => {
     setBasePatient(p); setNewBPVisit(null); setNewLabs(null)
-    setRiskResult(null); setMedRec(null)
+    setRiskResult(null); setMedRec(null); setRoleDone(false)
     go(3)
   }
 
+  // แพทย์: ไปต่อ BP Trend → คำนวณความเสี่ยง
   const handlePatientNext = (newVisit: BPVisit | null) => {
     setNewBPVisit(newVisit)
     let patient: CardioPatient = basePatient!
@@ -71,31 +71,16 @@ export default function Home() {
     go(4)
   }
 
-  const handleNurseDone = () => go(2)
-
-  // nurse เลือกไปหน้านัดหมาย
-  const handleNurseNext = (newVisit: BPVisit, selectedDoc: string) => {
-    setNewBPVisit(newVisit)
-    // อัปเดต treatingDoctor ใน basePatient (ไม่เพิ่ม visit ซ้ำ — effectivePatient จัดการเอง)
-    let updated: CardioPatient = basePatient!
-    if (selectedDoc) {
-      updated = { ...updated, treatingDoctor: selectedDoc }
-    } else if (!updated.treatingDoctor) {
-      updated = { ...updated, treatingDoctor: doctorName }
-    }
-    setBasePatient(updated)
-    // คำนวณ risk จาก patient เต็ม (รวม visit ใหม่)
-    let full = { ...updated, visits: [...updated.visits, newVisit] }
-    if (newLabs) full = { ...full, labs: { ...full.labs, ...newLabs } }
-    const risk = calculateRisk(full)
-    const rec  = getMedicationRecommendation(full, risk)
-    setRiskResult(risk); setMedRec(rec)
-    go(4)
+  // พยาบาล/เทคนิคการแพทย์: กรอกข้อมูลของตัวเองเสร็จ → จบ
+  const handleFinishRole = (newVisit: BPVisit | null) => {
+    if (newVisit) setNewBPVisit(newVisit)
+    setRoleDone(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleHome = () => {
     setBasePatient(null); setNewBPVisit(null); setNewLabs(null)
-    setRiskResult(null);  setMedRec(null)
+    setRiskResult(null);  setMedRec(null); setRoleDone(false)
     go(2)
   }
 
@@ -111,44 +96,55 @@ export default function Home() {
   return (
     <main style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '20px 16px 80px' }}>
       <Header doctorName={doctorName} userRole={userRole} onLogout={handleLogout} />
-      <StepIndicator step={step} />
+      {!roleDone && <StepIndicator step={step} userRole={userRole} />}
 
-      {step === 2 && (
+      {/* หน้าจอ "เสร็จสิ้น" สำหรับพยาบาล/เทคนิคการแพทย์ */}
+      {roleDone && effectivePatient && (
+        <div>
+          <div className={styles.confirmBanner}>
+            <div className={[styles.confirmCircle, styles.confirmCircleApprove].join(' ')}>
+              <svg viewBox="0 0 40 40" style={{ width: 36, height: 36 }}>
+                <polyline points="8,22 17,31 32,12" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div className={styles.confirmTitle}>บันทึกข้อมูลเรียบร้อย</div>
+            <div className={styles.confirmSub}>
+              {effectivePatient.name} · {userRole === 'nurse' ? 'บันทึกค่าความดันโลหิต' : 'บันทึกผลตรวจทางห้องปฏิบัติการ'}แล้ว
+            </div>
+          </div>
+          <div className={styles.aiNote}>
+            ข้อมูลถูกส่งให้แพทย์ใช้ประกอบการตัดสินใจ — บทบาทของคุณเสร็จสิ้นแล้ว
+          </div>
+          <div className={styles.btnRow}>
+            <button className={styles.btnP} onClick={handleHome}>ค้นหาผู้ป่วยใหม่</button>
+          </div>
+        </div>
+      )}
+
+      {!roleDone && step === 2 && (
         <PatientSearchPage onFound={handlePatientFound} onBack={handleLogout} />
       )}
 
-      {step === 3 && effectivePatient && (
+      {!roleDone && step === 3 && effectivePatient && (
         <PatientDetailPage
           patient={effectivePatient}
           doctorName={doctorName}
           userRole={userRole}
           onBack={() => go(2)}
           onNext={handlePatientNext}
-          onNurseDone={handleNurseDone}
-          onNurseNext={handleNurseNext}
+          onFinish={handleFinishRole}
         />
       )}
 
-      {step === 4 && effectivePatient && riskResult && (
-        <BPTrendPage
-          patient={effectivePatient}
-          risk={riskResult}
-          onBack={() => go(3)}
-          onNext={() => go(5)}
-        />
+      {!roleDone && step === 4 && effectivePatient && riskResult && (
+        <BPTrendPage patient={effectivePatient} risk={riskResult} onBack={() => go(3)} onNext={() => go(5)} />
       )}
 
-      {step === 5 && effectivePatient && riskResult && medRec && (
-        <RiskMedicationPage
-          patient={effectivePatient}
-          risk={riskResult}
-          recommendation={medRec}
-          onBack={() => go(4)}
-          onNext={() => go(6)}
-        />
+      {!roleDone && step === 5 && effectivePatient && riskResult && medRec && (
+        <RiskMedicationPage patient={effectivePatient} risk={riskResult} recommendation={medRec} onBack={() => go(4)} onNext={() => go(6)} />
       )}
 
-      {step === 6 && effectivePatient && riskResult && medRec && (
+      {!roleDone && step === 6 && effectivePatient && riskResult && medRec && (
         <SummaryPage
           patient={effectivePatient}
           risk={riskResult}

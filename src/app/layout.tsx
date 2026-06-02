@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'HyperSenseProgram — ระบบช่วยตัดสินใจทางคลินิก ความดันโลหิตสูง',
-  description: 'ระบบ AI ช่วยวิเคราะห์ความเสี่ยงโรคหัวใจและหลอดเลือด แนะนำแนวทางการรักษาความดันโลหิตสูง',
+  description: 'ระบบช่วยตัดสินใจทางคลินิก วิเคราะห์ความเสี่ยงโรคหัวใจและหลอดเลือด และแนะนำแนวทางการรักษาความดันโลหิตสูง',
 }
 
 export default function RootLayout({

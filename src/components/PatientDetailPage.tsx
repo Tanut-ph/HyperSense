@@ -1,8 +1,13 @@
 'use client'
-import { useState, useEffect } from 'react'
-import type { CardioPatient, BPVisit, UserRole, PatientLab, DoctorRecord } from '@/lib/types'
-import { saveVisit, hasSupabaseEnv } from '@/lib/supabaseData'
+import { useState } from 'react'
+import type { CardioPatient, BPVisit, UserRole, PatientLab, DoctorRecord, PatientProfile, SmokingStatus, AlcoholStatus } from '@/lib/types'
+import { saveVisit, saveLab, savePatientHistory, hasSupabaseEnv } from '@/lib/supabaseData'
+
+import { drugColor, drugLabel } from '@/lib/medicationGuide'
 import styles from './HyperSense.module.css'
+
+/** คืน string ที่ clamp ไม่ให้ติดลบ (ใช้กับ onChange ของ type="number" ทุกช่อง) */
+const nn = (v: string) => v === '' ? '' : String(Math.max(0, Number(v)))
 
 function isToday(dateStr: string) {
   const t = new Date(); const d = new Date(dateStr)
@@ -13,71 +18,475 @@ function isToday(dateStr: string) {
 const COMORBIDITY_LABEL: Record<string, string> = {
   diabetes: 'เบาหวาน (DM)', ckd: 'โรคไตเรื้อรัง (CKD)',
   cad: 'หลอดเลือดหัวใจ (CAD)', heartFailure: 'หัวใจล้มเหลว (HF)',
-  stroke: 'Stroke', af: 'AF', arrhythmias: 'หัวใจเต้นผิดจังหวะ', dementia: 'สมองเสื่อม',
+  stroke: 'หลอดเลือดสมอง (Stroke)', pad: 'หลอดเลือดส่วนปลาย (PAD)',
+  plaque: 'พบ Plaque', af: 'AF (หัวใจห้องบนสั่นพลิ้ว)',
+  arrhythmias: 'หัวใจเต้นผิดจังหวะ', dementia: 'สมองเสื่อม', dyslipidemia: 'ไขมันในเลือดผิดปกติ',
 }
 
-const DRUG_COLOR: Record<string, string> = {
-  'ACEI': '#3b82f6', 'ARB': '#8b5cf6', 'ARNI': '#6366f1',
-  'CCB-DHP': '#f59e0b', 'CCB-NonDHP': '#d97706',
-  'Beta-blocker': '#ef4444',
-  'Diuretic-Thiazide': '#14b8a6', 'Diuretic-Loop': '#0891b2', 'Diuretic-KSparing': '#0d9488',
-  'Alpha-blocker': '#84cc16', 'Alpha2-agonist': '#65a30d', 'Direct-Vasodilator': '#a3e635',
-}
+const SMOKING_TH: Record<string, string> = { never: 'ไม่สูบ', former: 'เคยสูบ (เลิกแล้ว)', current: 'สูบอยู่' }
+const ALCOHOL_TH: Record<string, string> = { never: 'ไม่ดื่ม', occasional: 'ดื่มเป็นครั้งคราว', regular: 'ดื่มประจำ', heavy: 'ดื่มหนัก' }
 
 function PatientAvatar({ patient }: { patient: CardioPatient }) {
   const colors = [['#00a872','#00b5a0'], ['#8b5cf6','#6366f1'], ['#f59e0b','#d97706'], ['#3b82f6','#2563eb'], ['#dc2626','#b91c1c']]
-  const [c1, c2] = colors[parseInt(patient.id) % colors.length]
+  const [c1, c2] = colors[parseInt(patient.id) % colors.length] ?? colors[0]
   return (
     <div style={{
       width: 80, height: 80, borderRadius: '50%', flexShrink: 0,
       background: `linear-gradient(135deg, ${c1}, ${c2})`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: 28, fontWeight: 700, color: '#fff',
-      border: '3px solid rgba(255,255,255,.5)',
-      boxShadow: `0 4px 16px ${c1}44`,
+      border: '3px solid rgba(255,255,255,.5)', boxShadow: `0 4px 16px ${c1}44`,
     }}>
       {patient.name.charAt(3) || '?'}
     </div>
   )
 }
 
-// ── Lab Entry (medtech) ───────────────────────────────────────────────────────
+// ── ประวัติ / ข้อมูลซักถามสำคัญ (ประกอบการตัดสินใจของแพทย์) ───────────────────
+function PatientHistoryCard({ patient }: { patient: CardioPatient }) {
+  const p = patient.profile
+  const lastV = patient.visits[patient.visits.length - 1]
+  const ascvd = [
+    patient.comorbidities.cad && 'หลอดเลือดหัวใจตีบ (CAD)',
+    patient.comorbidities.stroke && 'หลอดเลือดสมองตีบ/TIA',
+    patient.comorbidities.pad && 'หลอดเลือดส่วนปลายตีบ (PAD)',
+    patient.comorbidities.plaque && 'พบ Plaque',
+  ].filter(Boolean) as string[]
+
+  const fmtDuration = (y?: number, m?: number, d?: number): string | undefined => {
+    const parts: string[] = []
+    if (y) parts.push(`${y} ปี`)
+    if (m) parts.push(`${m} เดือน`)
+    if (d) parts.push(`${d} วัน`)
+    return parts.length ? parts.join(' ') : undefined
+  }
+
+  const rows: [string, string | undefined][] = [
+    ['ความดันสูงมานาน', fmtDuration(p?.htDurationYears, p?.htDurationMonths, p?.htDurationDays)],
+    ['เบาหวาน', patient.comorbidities.diabetes
+      ? [p?.dmType, p?.dmDiagnosisYear ? `วินิจฉัยปี ${p.dmDiagnosisYear}` : null, p?.dmDurationYears != null ? `${p.dmDurationYears} ปี` : null].filter(Boolean).join(' · ') || 'มี'
+      : undefined],
+    ['ไขมันในเลือดผิดปกติ', patient.comorbidities.dyslipidemia ? 'มี' : undefined],
+    ['โรคไตเรื้อรัง (CKD)', patient.comorbidities.ckd ? (p?.ckdDurationYears != null ? `${p.ckdDurationYears} ปี` : 'มี') : undefined],
+    ['ASCVD (หลอดเลือดแดงแข็ง)', ascvd.length ? ascvd.join(', ') : undefined],
+    ['ส่วนสูง', p?.heightCm ? `${p.heightCm} ซม.` : undefined],
+    ['น้ำหนัก', lastV ? `${lastV.weight} กก.` : undefined],
+    ['BMI', lastV ? `${lastV.bmi}` : undefined],
+    ['เส้นรอบเอว', p?.waistCm ? `${p.waistCm} ซม.` : undefined],
+    ['อ้วนลงพุง', p?.centralObesity ? 'ใช่' : undefined],
+    ['สูบบุหรี่', p?.smokingStatus
+      ? `${SMOKING_TH[p.smokingStatus]}${fmtDuration(p.smokingYears, p.smokingMonths, p.smokingDays) ? ` (${fmtDuration(p.smokingYears, p.smokingMonths, p.smokingDays)})` : ''}`
+      : undefined],
+    ['ดื่มแอลกอฮอล์', p?.alcohol ? ALCOHOL_TH[p.alcohol] : undefined],
+  ]
+  const filled = rows.filter(([, v]) => v)
+
+  const flags: { text: string; level: 'danger' | 'warn' }[] = []
+  if (p?.pregnant) flags.push({ text: 'ตั้งครรภ์ — เลี่ยงยา ACEI/ARB/ARNI', level: 'danger' })
+  if (p?.recentSurgery) flags.push({ text: `ผ่าตัด/หัตถการ: ${p.recentSurgery}`, level: 'warn' })
+  if (p?.smokingStatus === 'current') flags.push({ text: 'สูบบุหรี่อยู่', level: 'warn' })
+  if (p?.alcohol === 'heavy' || p?.alcohol === 'regular') flags.push({ text: 'ดื่มแอลกอฮอล์ประจำ', level: 'warn' })
+
+  const isEmpty = filled.length === 0 && flags.length === 0 && !p?.importantNotes
+
+  return (
+    <div style={{ background: 'var(--bg2)', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', padding: '16px 18px', marginBottom: 16 }}>
+      <div className={styles.lbl} style={{ marginBottom: 10 }}>ประวัติและข้อมูลสำคัญ (ประกอบการตัดสินใจ)</div>
+
+      {flags.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {flags.map((f, i) => (
+            <span key={i} style={{
+              padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+              background: f.level === 'danger' ? 'rgba(220,38,38,.1)' : 'rgba(217,119,6,.1)',
+              border: `1px solid ${f.level === 'danger' ? 'rgba(220,38,38,.35)' : 'rgba(217,119,6,.35)'}`,
+              color: f.level === 'danger' ? '#dc2626' : '#b45309',
+            }}>{f.text}</span>
+          ))}
+        </div>
+      )}
+
+      {filled.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px 18px' }}>
+          {filled.map(([k, v]) => (
+            <div key={k} style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', gap: 8, borderBottom: '1px dashed var(--border)', paddingBottom: 3 }}>
+              <span style={{ color: 'var(--text3)' }}>{k}</span>
+              <span style={{ color: 'var(--text)', fontWeight: 600, textAlign: 'right' }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {isEmpty && (
+        <div style={{ fontSize: 12.5, color: 'var(--text3)', fontStyle: 'italic' }}>
+          ยังไม่มีข้อมูลซักประวัติเพิ่มเติม — แนะนำให้ซักประวัติ (ระยะเวลาเป็นโรค, ASCVD, สูบบุหรี่/ดื่มเหล้า, ตั้งครรภ์ ฯลฯ) และบันทึกในระบบ
+        </div>
+      )}
+
+      {p?.importantNotes && (
+        <div style={{ marginTop: 12, background: 'rgba(59,130,246,.05)', border: '1px solid rgba(59,130,246,.2)', borderRadius: 'var(--rs)', padding: '10px 12px', fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
+          <strong style={{ color: '#1d4ed8' }}>หมายเหตุสำคัญ:</strong> {p.importantNotes}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── History Entry (nurse) — ซักประวัติผู้ป่วยใหม่ ────────────────────────────
+function HistoryEntrySection({
+  patient,
+  onSaved,
+}: {
+  patient: CardioPatient
+  onSaved?: (profile: Partial<PatientProfile>) => void
+}) {
+  const existing = patient.profile
+  const [saving, setSaving] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+  const [dbStatus, setDbStatus] = useState<'idle'|'ok'|'warn'>('idle')
+
+  // ── form state ──
+  const [htYears,       setHtYears]       = useState(String(existing?.htDurationYears  ?? ''))
+  const [htMonths,      setHtMonths]      = useState(String(existing?.htDurationMonths ?? ''))
+  const [htDays,        setHtDays]        = useState(String(existing?.htDurationDays   ?? ''))
+  const [heightCm,      setHeightCm]      = useState(String(existing?.heightCm ?? ''))
+  const [waistCm,       setWaistCm]       = useState(String(existing?.waistCm ?? ''))
+  const [centralObesity,setCentralObesity]= useState(existing?.centralObesity ?? false)
+  const [smoking,       setSmoking]       = useState<SmokingStatus>(existing?.smokingStatus ?? 'never')
+  const [smokingYears,  setSmokingYears]  = useState(String(existing?.smokingYears  ?? ''))
+  const [smokingMonths, setSmokingMonths] = useState(String(existing?.smokingMonths ?? ''))
+  const [smokingDays,   setSmokingDays]   = useState(String(existing?.smokingDays   ?? ''))
+  const [alcohol,       setAlcohol]       = useState<AlcoholStatus>(existing?.alcohol ?? 'never')
+  const [pregnant,      setPregnant]      = useState(existing?.pregnant ?? false)
+  const [recentSurgery, setRecentSurgery] = useState(existing?.recentSurgery ?? '')
+  const [importantNotes,setImportantNotes]= useState(existing?.importantNotes ?? '')
+  // เบาหวาน
+  const [dmType,        setDmType]        = useState(existing?.dmType ?? '')
+  const [dmDiagYear,    setDmDiagYear]    = useState(String(existing?.dmDiagnosisYear ?? ''))
+  const [dmYears,       setDmYears]       = useState(String(existing?.dmDurationYears ?? ''))
+  // CKD
+  const [ckdYears,      setCkdYears]      = useState(String(existing?.ckdDurationYears ?? ''))
+
+  const collect = (): Partial<PatientProfile> => ({
+    htDurationYears:  htYears  ? parseInt(htYears)  : undefined,
+    htDurationMonths: htMonths ? parseInt(htMonths) : undefined,
+    htDurationDays:   htDays   ? parseInt(htDays)   : undefined,
+    heightCm:         heightCm ? parseFloat(heightCm) : undefined,
+    waistCm:          waistCm ? parseFloat(waistCm) : undefined,
+    centralObesity:   centralObesity || undefined,
+    smokingStatus:    smoking,
+    smokingYears:  smoking !== 'never' && smokingYears  ? parseInt(smokingYears)  : undefined,
+    smokingMonths: smoking !== 'never' && smokingMonths ? parseInt(smokingMonths) : undefined,
+    smokingDays:   smoking !== 'never' && smokingDays   ? parseInt(smokingDays)   : undefined,
+    alcohol:          alcohol,
+    pregnant:         pregnant || undefined,
+    recentSurgery:    recentSurgery.trim() || undefined,
+    importantNotes:   importantNotes.trim() || undefined,
+    dmType:           dmType.trim() || undefined,
+    dmDiagnosisYear:  dmDiagYear ? parseInt(dmDiagYear) : undefined,
+    dmDurationYears:  dmYears ? parseInt(dmYears) : undefined,
+    ckdDurationYears: ckdYears ? parseInt(ckdYears) : undefined,
+  })
+
+  const handleSave = async () => {
+    const profile = collect()
+    setSaving(true)
+    if (hasSupabaseEnv && patient.dbId) {
+      const res = await savePatientHistory(patient.dbId, profile)
+      setDbStatus(res.success ? 'ok' : 'warn')
+    }
+    setSaving(false)
+    onSaved?.(profile)
+    setSaved(true)
+  }
+
+  const inputStyle = (highlight = false): React.CSSProperties => ({
+    width: '100%', padding: '8px 10px', background: '#fff',
+    border: `1.5px solid ${highlight ? '#3b82f6' : 'var(--border2)'}`,
+    borderRadius: 'var(--rs)', fontSize: 13, outline: 'none', boxSizing: 'border-box',
+  })
+  const selectStyle: React.CSSProperties = {
+    width: '100%', padding: '8px 10px', background: '#fff',
+    border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', fontSize: 13, cursor: 'pointer',
+  }
+  const lbl = (text: string) => (
+    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4 }}>
+      {text}
+    </label>
+  )
+
+  if (saved) {
+    const profile = collect()
+    const highlights: string[] = []
+    if (pregnant) highlights.push('ตั้งครรภ์')
+    if (smoking === 'current') highlights.push('สูบบุหรี่')
+    if (alcohol === 'regular' || alcohol === 'heavy') highlights.push('ดื่มแอลกอฮอล์')
+    if (recentSurgery) highlights.push(`ผ่าตัด: ${recentSurgery}`)
+
+    return (
+      <div style={{ background: 'rgba(59,130,246,.04)', border: '1.5px solid rgba(59,130,246,.25)', borderRadius: 'var(--r)', padding: '14px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ fontWeight: 700, color: '#1d4ed8', flex: 1 }}>
+            บันทึกประวัติผู้ป่วยแล้ว
+            {hasSupabaseEnv && <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'var(--mono)', color: dbStatus === 'ok' ? '#007d60' : '#9a6700' }}>{dbStatus === 'ok' ? '(Supabase)' : '(Session)'}</span>}
+          </div>
+          <button onClick={() => setSaved(false)}
+            style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', background: 'rgba(59,130,246,.08)', border: '1px solid rgba(59,130,246,.3)', color: '#1d4ed8' }}>
+            แก้ไข
+          </button>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {(htYears || htMonths || htDays) && (
+            <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: 'var(--bg3)', border: '1px solid var(--border)', fontFamily: 'var(--mono)' }}>
+              ความดันมา {[htYears && `${htYears} ปี`, htMonths && `${htMonths} เดือน`, htDays && `${htDays} วัน`].filter(Boolean).join(' ')}
+            </span>
+          )}
+          {heightCm && <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: 'var(--bg3)', border: '1px solid var(--border)', fontFamily: 'var(--mono)' }}>{heightCm} ซม.</span>}
+          {waistCm && <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: 'var(--bg3)', border: '1px solid var(--border)', fontFamily: 'var(--mono)' }}>เอว {waistCm} ซม.</span>}
+          {highlights.map(h => (
+            <span key={h} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: 'rgba(220,38,38,.08)', border: '1px solid rgba(220,38,38,.25)', color: '#dc2626', fontWeight: 600 }}>{h}</span>
+          ))}
+          {importantNotes && <span style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic' }}>{importantNotes}</span>}
+        </div>
+      </div>
+    )
+  }
+
+  const hasDiabetes    = patient.comorbidities.diabetes
+  const hasCKD         = patient.comorbidities.ckd
+
+  return (
+    <div style={{ background: 'rgba(59,130,246,.04)', border: '1.5px solid rgba(59,130,246,.2)', borderRadius: 'var(--r)', padding: '18px 20px' }}>
+      <div style={{ fontWeight: 700, color: '#1d4ed8', fontSize: 14, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+        ซักประวัติผู้ป่วย
+        <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: '#3b82f6' }}>[พยาบาล]</span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 16 }}>
+        {existing ? 'มีข้อมูลประวัติบางส่วนในระบบ — กรอกเพิ่มหรือแก้ไขได้' : 'ผู้ป่วยใหม่ — กรุณาซักประวัติเพิ่มเติม (กรอกเฉพาะที่ทราบ)'}
+      </div>
+
+      {/* แถว 1: ข้อมูลพื้นฐาน */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>ข้อมูลพื้นฐาน</div>
+
+      {/* ความดันสูงมานาน: ปี / เดือน / วัน */}
+      <div style={{ marginBottom: 14 }}>
+        {lbl('ความดันสูงมานาน (กรอกเฉพาะที่ทราบ)')}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ flex: 1 }}>
+            <input type="number" min="0" value={htYears} onChange={e => setHtYears(nn(e.target.value))} placeholder="0"
+              style={{ ...inputStyle(), textAlign: 'center' }} />
+            <div style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'center', marginTop: 3 }}>ปี</div>
+          </div>
+          <div style={{ color: 'var(--text3)', paddingBottom: 16 }}>:</div>
+          <div style={{ flex: 1 }}>
+            <input type="number" min="0" max="11" value={htMonths} onChange={e => setHtMonths(nn(e.target.value))} placeholder="0"
+              style={{ ...inputStyle(), textAlign: 'center' }} />
+            <div style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'center', marginTop: 3 }}>เดือน</div>
+          </div>
+          <div style={{ color: 'var(--text3)', paddingBottom: 16 }}>:</div>
+          <div style={{ flex: 1 }}>
+            <input type="number" min="0" max="30" value={htDays} onChange={e => setHtDays(nn(e.target.value))} placeholder="0"
+              style={{ ...inputStyle(), textAlign: 'center' }} />
+            <div style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'center', marginTop: 3 }}>วัน</div>
+          </div>
+          {(htYears || htMonths || htDays) && (
+            <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600, paddingBottom: 14, whiteSpace: 'nowrap' }}>
+              = {[htYears && `${htYears} ปี`, htMonths && `${htMonths} เดือน`, htDays && `${htDays} วัน`].filter(Boolean).join(' ')}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }}>
+        <div>
+          {lbl('ส่วนสูง (ซม.)')}
+          <input type="number" min="0" value={heightCm} onChange={e => setHeightCm(nn(e.target.value))} placeholder="ซม." style={inputStyle()} />
+        </div>
+        <div>
+          {lbl('เส้นรอบเอว (ซม.)')}
+          <input type="number" min="0" value={waistCm} onChange={e => setWaistCm(nn(e.target.value))} placeholder="ซม." style={inputStyle()} />
+        </div>
+      </div>
+
+      {/* แถว 2: ไลฟ์สไตล์ */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>ไลฟ์สไตล์</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
+        <div>
+          {lbl('สูบบุหรี่')}
+          <select value={smoking} onChange={e => setSmoking(e.target.value as SmokingStatus)} style={selectStyle}>
+            <option value="never">ไม่สูบ</option>
+            <option value="former">เคยสูบ (เลิกแล้ว)</option>
+            <option value="current">สูบอยู่</option>
+          </select>
+        </div>
+        {smoking !== 'never' && (
+          <div style={{ gridColumn: '1 / -1' }}>
+            {lbl('สูบมานาน (กรอกเฉพาะที่ทราบ)')}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ flex: 1 }}>
+                <input type="number" min="0" value={smokingYears} onChange={e => setSmokingYears(nn(e.target.value))} placeholder="0"
+                  style={{ ...inputStyle(), textAlign: 'center' }} />
+                <div style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'center', marginTop: 3 }}>ปี</div>
+              </div>
+              <div style={{ color: 'var(--text3)', paddingBottom: 16 }}>:</div>
+              <div style={{ flex: 1 }}>
+                <input type="number" min="0" max="11" value={smokingMonths} onChange={e => setSmokingMonths(nn(e.target.value))} placeholder="0"
+                  style={{ ...inputStyle(), textAlign: 'center' }} />
+                <div style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'center', marginTop: 3 }}>เดือน</div>
+              </div>
+              <div style={{ color: 'var(--text3)', paddingBottom: 16 }}>:</div>
+              <div style={{ flex: 1 }}>
+                <input type="number" min="0" max="30" value={smokingDays} onChange={e => setSmokingDays(nn(e.target.value))} placeholder="0"
+                  style={{ ...inputStyle(), textAlign: 'center' }} />
+                <div style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'center', marginTop: 3 }}>วัน</div>
+              </div>
+              {(smokingYears || smokingMonths || smokingDays) && (
+                <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600, paddingBottom: 14, whiteSpace: 'nowrap' }}>
+                  = {[smokingYears && `${smokingYears} ปี`, smokingMonths && `${smokingMonths} เดือน`, smokingDays && `${smokingDays} วัน`].filter(Boolean).join(' ')}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <div>
+          {lbl('ดื่มแอลกอฮอล์')}
+          <select value={alcohol} onChange={e => setAlcohol(e.target.value as AlcoholStatus)} style={selectStyle}>
+            <option value="never">ไม่ดื่ม</option>
+            <option value="occasional">ดื่มเป็นครั้งคราว</option>
+            <option value="regular">ดื่มประจำ</option>
+            <option value="heavy">ดื่มหนัก</option>
+          </select>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 18 }}>
+          <input type="checkbox" id="centralObesity" checked={centralObesity} onChange={e => setCentralObesity(e.target.checked)}
+            style={{ width: 16, height: 16, cursor: 'pointer' }} />
+          <label htmlFor="centralObesity" style={{ fontSize: 13, cursor: 'pointer' }}>อ้วนลงพุง</label>
+        </div>
+      </div>
+
+      {/* แถว 3: ตั้งครรภ์ + ผ่าตัด */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: pregnant ? 'rgba(220,38,38,.05)' : '#fff', border: `1.5px solid ${pregnant ? 'rgba(220,38,38,.3)' : 'var(--border2)'}`, borderRadius: 'var(--rs)', padding: '10px 14px' }}>
+          <input type="checkbox" id="pregnant" checked={pregnant} onChange={e => setPregnant(e.target.checked)}
+            style={{ width: 18, height: 18, cursor: 'pointer' }} />
+          <label htmlFor="pregnant" style={{ fontSize: 13, cursor: 'pointer', color: pregnant ? '#dc2626' : 'var(--text)', fontWeight: pregnant ? 700 : 400 }}>
+            ตั้งครรภ์ {pregnant && '⚠️ (ระวังการเลือกยา)'}
+          </label>
+        </div>
+        <div>
+          {lbl('ประวัติการผ่าตัด / หัตถการล่าสุด')}
+          <input type="text" value={recentSurgery} onChange={e => setRecentSurgery(e.target.value)}
+            placeholder="เช่น ผ่าตัดหัวใจ 3 เดือนก่อน..."
+            style={inputStyle()} />
+        </div>
+      </div>
+
+      {/* แถว 4: เบาหวาน (แสดงเมื่อมีในโรคร่วม) */}
+      {hasDiabetes && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>เบาหวาน</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
+            <div>
+              {lbl('ชนิดเบาหวาน')}
+              <select value={dmType} onChange={e => setDmType(e.target.value)} style={selectStyle}>
+                <option value="">— เลือก —</option>
+                <option value="เบาหวานชนิดที่ 1">ชนิดที่ 1</option>
+                <option value="เบาหวานชนิดที่ 2">ชนิดที่ 2</option>
+                <option value="เบาหวานขณะตั้งครรภ์">ขณะตั้งครรภ์ (GDM)</option>
+              </select>
+            </div>
+            <div>
+              {lbl('ปีที่วินิจฉัย (พ.ศ.)')}
+              <input type="number" min="1900" max="2600" value={dmDiagYear} onChange={e => setDmDiagYear(nn(e.target.value))} placeholder="เช่น 2560" style={inputStyle()} />
+            </div>
+            <div>
+              {lbl('เป็นมากี่ปี')}
+              <input type="number" min="0" value={dmYears} onChange={e => setDmYears(nn(e.target.value))} placeholder="ปี" style={inputStyle()} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* แถว 5: CKD */}
+      {hasCKD && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>โรคไตเรื้อรัง (CKD)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }}>
+            <div>
+              {lbl('เป็นมากี่ปี')}
+              <input type="number" min="0" value={ckdYears} onChange={e => setCkdYears(nn(e.target.value))} placeholder="ปี" style={inputStyle()} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* หมายเหตุสำคัญ */}
+      <div style={{ marginBottom: 14 }}>
+        {lbl('หมายเหตุสำคัญอื่นๆ')}
+        <textarea value={importantNotes} onChange={e => setImportantNotes(e.target.value)}
+          placeholder="ข้อมูลสำคัญที่แพทย์ควรทราบ เช่น แพ้ยา ประวัติครอบครัว โรคอื่นๆ..."
+          rows={2}
+          style={{ width: '100%', padding: '9px 11px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
+          onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = ''} />
+      </div>
+
+      <button
+        onClick={handleSave} disabled={saving}
+        style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#fff', border: 'none', borderRadius: 'var(--rs)', padding: '10px 24px', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+        {saving ? 'กำลังบันทึก...' : 'บันทึกประวัติ'}
+      </button>
+    </div>
+  )
+}
+
+// ── Lab Entry (medtech) — ครบตาม data dictionary ─────────────────────────────
 function LabEntrySection({ patient, onLabSaved }: { patient: CardioPatient; onLabSaved?: (labs: Partial<PatientLab>) => void }) {
   const labs = patient.labs
   type LabKey = keyof typeof fields
   const fields = {
-    fpg:        { label: 'น้ำตาลในเลือด FPG (mg/dL)',     placeholder: String(labs.fpg ?? ''), unit: 'mg/dL', warn: (v: number) => v > 126 },
-    hba1c:      { label: 'HbA1c (%)',                      placeholder: String(labs.hba1c ?? ''), unit: '%',    warn: (v: number) => v > 7.5 },
-    uacr:       { label: 'ผลปัสสาวะ uACR (mg/g)',          placeholder: String(labs.uacr ?? ''), unit: 'mg/g', warn: (v: number) => v > 30 },
-    creatinine: { label: 'Creatinine (mg/dL)',             placeholder: String(labs.creatinine ?? ''), unit: 'mg/dL', warn: (v: number) => v > 1.3 },
-    egfr:       { label: 'eGFR (mL/min/1.73m²)',           placeholder: String(labs.egfr ?? ''), unit: '', warn: (v: number) => v < 60 },
-    ldl:        { label: 'LDL Cholesterol (mg/dL)',        placeholder: String(labs.ldl ?? ''), unit: 'mg/dL', warn: (v: number) => v > 130 },
-    hdl:        { label: 'HDL Cholesterol (mg/dL)',        placeholder: String(labs.hdl ?? ''), unit: 'mg/dL', warn: (v: number) => v < 40 },
-    tg:         { label: 'Triglyceride (mg/dL)',           placeholder: String(labs.tg ?? ''), unit: 'mg/dL', warn: (v: number) => v > 150 },
-    chol:       { label: 'Total Cholesterol (mg/dL)',      placeholder: String(labs.chol ?? ''), unit: 'mg/dL', warn: (v: number) => v > 200 },
-    potassium:  { label: 'Potassium K⁺ (mEq/L)',           placeholder: String(labs.potassium ?? ''), unit: 'mEq/L', warn: (v: number) => v > 5.0 },
-    sodium:     { label: 'Sodium Na⁺ (mEq/L)',             placeholder: String(labs.sodium ?? ''), unit: 'mEq/L', warn: (v: number) => v < 135 || v > 145 },
-    hemoglobin: { label: 'Hemoglobin Hb (g/dL)',           placeholder: String(labs.hemoglobin ?? ''), unit: 'g/dL', warn: (v: number) => v < 12 },
-    wbc:        { label: 'WBC (×10³/µL)',                  placeholder: String(labs.wbc ?? ''), unit: '×10³/µL', warn: (v: number) => v > 10 || v < 4 },
-    troponin:   { label: 'Troponin (ng/mL)',               placeholder: String(labs.troponin ?? ''), unit: 'ng/mL', warn: (v: number) => v > 0.04 },
-    proBNP:     { label: 'NT-proBNP (pg/mL)',              placeholder: String(labs.proBNP ?? ''), unit: 'pg/mL', warn: (v: number) => v > 125 },
+    fpg:        { label: 'FPG (mg/dL)',            ph: String(labs.fpg ?? ''),        warn: (v: number) => v > 126 },
+    hba1c:      { label: 'HbA1c (%)',              ph: String(labs.hba1c ?? ''),      warn: (v: number) => v > 7.5 },
+    ldl:        { label: 'LDL (mg/dL)',            ph: String(labs.ldl ?? ''),        warn: (v: number) => v > 130 },
+    hdl:        { label: 'HDL (mg/dL)',            ph: String(labs.hdl ?? ''),        warn: (v: number) => v < 40 },
+    tg:         { label: 'Triglyceride (mg/dL)',   ph: String(labs.tg ?? ''),         warn: (v: number) => v > 150 },
+    chol:       { label: 'Total Chol (mg/dL)',     ph: String(labs.chol ?? ''),       warn: (v: number) => v > 200 },
+    creatinine: { label: 'Creatinine (mg/dL)',     ph: String(labs.creatinine ?? ''), warn: (v: number) => v > 1.3 },
+    egfr:       { label: 'eGFR',                   ph: String(labs.egfr ?? ''),       warn: (v: number) => v < 60 },
+    uacr:       { label: 'uACR (mg/g)',            ph: String(labs.uacr ?? ''),       warn: (v: number) => v > 30 },
+    upcr:       { label: 'uPCR (mg/g)',            ph: String(labs.upcr ?? ''),       warn: (v: number) => v > 150 },
+    proteinUrine24: { label: 'Protein urine 24hr (mg)', ph: String(labs.proteinUrine24 ?? ''), warn: (v: number) => v > 150 },
+    potassium:  { label: 'Potassium K⁺ (mEq/L)',   ph: String(labs.potassium ?? ''),  warn: (v: number) => v > 5.0 || v < 3.5 },
+    sodium:     { label: 'Sodium Na⁺ (mEq/L)',     ph: String(labs.sodium ?? ''),     warn: (v: number) => v < 135 || v > 145 },
+    calcium:    { label: 'Calcium (mg/dL)',        ph: String(labs.calcium ?? ''),    warn: (v: number) => v < 8.5 || v > 10.5 },
+    co2:        { label: 'CO₂ (mEq/L)',            ph: String(labs.co2 ?? ''),        warn: (v: number) => v < 22 || v > 29 },
+    cl:         { label: 'Chloride (mEq/L)',       ph: String(labs.cl ?? ''),         warn: (v: number) => v < 96 || v > 106 },
+    po4:        { label: 'Phosphate (mg/dL)',      ph: String(labs.po4 ?? ''),        warn: (v: number) => v < 2.5 || v > 4.5 },
+    uric:       { label: 'Uric acid (mg/dL)',      ph: String(labs.uric ?? ''),       warn: (v: number) => v > 7 },
+    hemoglobin: { label: 'Hemoglobin (g/dL)',      ph: String(labs.hemoglobin ?? ''), warn: (v: number) => v < 12 },
+    hematocrit: { label: 'Hematocrit (%)',         ph: String(labs.hematocrit ?? ''), warn: (v: number) => v < 36 },
+    wbc:        { label: 'WBC (×10³/µL)',          ph: String(labs.wbc ?? ''),        warn: (v: number) => v > 10 || v < 4 },
+    platelet:   { label: 'Platelet (×10³/µL)',     ph: String(labs.platelet ?? ''),   warn: (v: number) => v < 150 || v > 400 },
+    t3:         { label: 'T3',                      ph: String(labs.t3 ?? ''),         warn: () => false },
+    t4:         { label: 'T4 (Free T4)',           ph: String(labs.t4 ?? ''),         warn: () => false },
+    troponin:   { label: 'Troponin (ng/mL)',       ph: String(labs.troponin ?? ''),   warn: (v: number) => v > 0.04 },
+    proBNP:     { label: 'NT-proBNP (pg/mL)',      ph: String(labs.proBNP ?? ''),     warn: (v: number) => v > 125 },
   }
 
   const [vals, setVals] = useState<Partial<Record<string, string>>>({})
   const [saved, setSaved] = useState(false)
-
+  const [dbStatus, setDbStatus] = useState<'idle'|'ok'|'warn'>('idle')
+  const [savingLab, setSavingLab] = useState(false)
   const set = (k: string, v: string) => setVals(p => ({ ...p, [k]: v }))
 
   const groups = [
     { title: 'น้ำตาลและเบาหวาน', keys: ['fpg', 'hba1c'] as LabKey[] },
-    { title: 'ผลตรวจปัสสาวะและไต', keys: ['uacr', 'creatinine', 'egfr'] as LabKey[] },
     { title: 'ไขมันในเลือด', keys: ['ldl', 'hdl', 'tg', 'chol'] as LabKey[] },
-    { title: 'เกลือแร่', keys: ['potassium', 'sodium'] as LabKey[] },
-    { title: 'ความสมบูรณ์ของเลือด (CBC)', keys: ['hemoglobin', 'wbc'] as LabKey[] },
+    { title: 'ไต / ปัสสาวะ', keys: ['creatinine', 'egfr', 'uacr', 'upcr', 'proteinUrine24'] as LabKey[] },
+    { title: 'เกลือแร่ / เมตาบอลิก', keys: ['potassium', 'sodium', 'calcium', 'co2', 'cl', 'po4', 'uric'] as LabKey[] },
+    { title: 'ความสมบูรณ์ของเลือด (CBC)', keys: ['hemoglobin', 'hematocrit', 'wbc', 'platelet'] as LabKey[] },
+    { title: 'ไทรอยด์', keys: ['t3', 't4'] as LabKey[] },
     { title: 'ค่าหัวใจขั้นสูง', keys: ['troponin', 'proBNP'] as LabKey[] },
   ]
 
-  // UA Dipstick (qualitative — text select)
   const UA_FIELDS: { key: string; label: string; opts: string[] }[] = [
     { key: 'ua_protein',  label: 'Protein',  opts: ['Negative', 'Trace', '1+', '2+', '3+', '4+'] },
     { key: 'ua_glucose',  label: 'Glucose',  opts: ['Negative', '1+', '2+', '3+', '4+'] },
@@ -91,34 +500,44 @@ function LabEntrySection({ patient, onLabSaved }: { patient: CardioPatient; onLa
   const [uaVals,  setUaVals]  = useState<Record<string, string>>({})
   const [ecgNote, setEcgNote] = useState('')
   const [extraNote, setExtraNote] = useState('')
-
   const setUa = (k: string, v: string) => setUaVals(p => ({ ...p, [k]: v }))
 
-  const handleLabSave = () => {
-    const saved: Partial<PatientLab> = { date: new Date().toISOString().split('T')[0] }
+  const collectLabs = (): Partial<PatientLab> => {
+    const out: Partial<PatientLab> = { date: new Date().toISOString().split('T')[0] }
     for (const [k, v] of Object.entries(vals)) {
       const num = parseFloat(v ?? '')
-      if (!isNaN(num)) (saved as Record<string, number | string>)[k] = num
+      if (!isNaN(num)) (out as Record<string, number | string>)[k] = num
     }
-    onLabSaved?.(saved)
-    setSaved(true)
+    return out
+  }
+
+  const handleLabSave = async () => {
+    const collected = collectLabs()
+    onLabSaved?.(collected)
+    setSavingLab(true)
+    if (hasSupabaseEnv && patient.dbId) {
+      const res = await saveLab(patient.dbId, collected, { ua: uaVals, ecgNote, extraNote })
+      setDbStatus(res.success ? 'ok' : 'warn')
+    }
+    setSavingLab(false); setSaved(true)
   }
 
   if (saved) return (
     <div style={{ background: 'rgba(139,92,246,.04)', border: '1.5px solid rgba(139,92,246,.25)', borderRadius: 'var(--r)', padding: '16px 18px' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-        <div style={{ fontWeight: 700, color: '#7c3aed', flex: 1 }}>บันทึกผลการตรวจแล้ว</div>
+        <div style={{ fontWeight: 700, color: '#7c3aed', flex: 1 }}>
+          บันทึกผลการตรวจแล้ว
+          {hasSupabaseEnv && <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'var(--mono)', color: dbStatus === 'ok' ? '#007d60' : '#9a6700' }}>{dbStatus === 'ok' ? '(Supabase)' : '(Session)'}</span>}
+        </div>
         <button onClick={() => setSaved(false)}
           style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', background: 'rgba(139,92,246,.08)', border: '1px solid rgba(139,92,246,.3)', color: '#7c3aed' }}>
           แก้ไข
         </button>
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>กด <strong>แก้ไข</strong> เพื่อแก้ไขค่า หรือดำเนินการต่อเพื่อดูผลการวิเคราะห์</div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>กด <strong>แก้ไข</strong> เพื่อแก้ไขค่า แล้วบันทึกซ้ำได้</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {Object.entries(vals).filter(([, v]) => v).map(([k, v]) => {
-          const f = fields[k as LabKey]
-          const num = parseFloat(v!)
-          const hi = !isNaN(num) && f.warn(num)
+          const f = fields[k as LabKey]; const num = parseFloat(v!); const hi = !isNaN(num) && f.warn(num)
           return (
             <div key={k} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--rs)', background: hi ? 'rgba(220,38,38,.08)' : 'var(--bg3)', border: `1px solid ${hi ? 'rgba(220,38,38,.3)' : 'var(--border)'}`, color: hi ? '#dc2626' : 'var(--text2)', fontFamily: 'var(--mono)' }}>
               {f.label.split(' ')[0]}: <strong>{v}</strong>
@@ -140,19 +559,15 @@ function LabEntrySection({ patient, onLabSaved }: { patient: CardioPatient; onLa
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{g.title}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
             {g.keys.map(k => {
-              const f = fields[k]
-              const num = parseFloat(vals[k] ?? '')
-              const hi = vals[k] && !isNaN(num) && f.warn(num)
+              const f = fields[k]; const num = parseFloat(vals[k] ?? ''); const hi = vals[k] && !isNaN(num) && f.warn(num)
               return (
                 <div key={k}>
                   <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 4, fontWeight: 600 }}>{f.label}</label>
-                  <input
-                    type="number" value={vals[k] ?? ''} placeholder={f.placeholder || '—'}
-                    onChange={e => set(k, e.target.value)}
-                    style={{ width: '100%', padding: '9px 11px', background: '#fff', border: `1.5px solid ${hi ? 'rgba(220,38,38,.5)' : 'var(--border2)'}`, borderRadius: 'var(--rs)', color: hi ? '#dc2626' : 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, outline: 'none' }}
+                  <input type="number" min="0" value={vals[k] ?? ''} placeholder={f.ph || '—'}
+                    onChange={e => set(k, nn(e.target.value))}
+                    style={{ width: '100%', padding: '9px 11px', background: '#fff', border: `1.5px solid ${hi ? 'rgba(220,38,38,.5)' : 'var(--border2)'}`, borderRadius: 'var(--rs)', color: hi ? '#dc2626' : 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
                     onFocus={e => e.target.style.borderColor = '#8b5cf6'}
-                    onBlur={e => e.target.style.borderColor = hi ? 'rgba(220,38,38,.5)' : ''}
-                  />
+                    onBlur={e => e.target.style.borderColor = hi ? 'rgba(220,38,38,.5)' : ''} />
                   {hi && <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>⚠ ค่าผิดปกติ</div>}
                 </div>
               )
@@ -160,7 +575,6 @@ function LabEntrySection({ patient, onLabSaved }: { patient: CardioPatient; onLa
           </div>
         </div>
       ))}
-      {/* UA Dipstick */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>ผลตรวจปัสสาวะ (UA Dipstick)</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
@@ -179,125 +593,52 @@ function LabEntrySection({ patient, onLabSaved }: { patient: CardioPatient; onLa
           })}
         </div>
       </div>
-
-      {/* ECG */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>ผล ECG / คลื่นหัวใจ (ถ้ามี)</div>
         <textarea value={ecgNote} onChange={e => setEcgNote(e.target.value)}
-          placeholder="เช่น Sinus rhythm, HR 72 bpm, no ST change / Atrial fibrillation HR 88..."
-          rows={2}
+          placeholder="เช่น Sinus rhythm, HR 72 bpm, no ST change / Atrial fibrillation..." rows={2}
           style={{ width: '100%', padding: '9px 11px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = '#8b5cf6'}
-          onBlur={e => e.target.style.borderColor = ''}
-        />
+          onFocus={e => e.target.style.borderColor = '#8b5cf6'} onBlur={e => e.target.style.borderColor = ''} />
       </div>
-
-      {/* หมายเหตุเพิ่มเติม */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>หมายเหตุ / ข้อสังเกตเพิ่มเติม</div>
         <textarea value={extraNote} onChange={e => setExtraNote(e.target.value)}
-          placeholder="ข้อสังเกตอื่นๆ จากการตรวจ..."
-          rows={2}
+          placeholder="ข้อสังเกตอื่นๆ จากการตรวจ..." rows={2}
           style={{ width: '100%', padding: '9px 11px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = '#8b5cf6'}
-          onBlur={e => e.target.style.borderColor = ''}
-        />
+          onFocus={e => e.target.style.borderColor = '#8b5cf6'} onBlur={e => e.target.style.borderColor = ''} />
       </div>
-
-      <button className={styles.btnP} style={{ background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)', marginTop: 4 }} onClick={handleLabSave}>
-        บันทึกผลการตรวจ
+      <button className={styles.btnP} style={{ background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)', marginTop: 4 }} onClick={handleLabSave} disabled={savingLab}>
+        {savingLab ? 'กำลังบันทึก...' : 'บันทึกผลการตรวจ'}
       </button>
     </div>
   )
 }
 
-// ── BP Section ───────────────────────────────────────────────────────────────
+// ── BP Section (nurse & doctor) — แก้ไขได้หลังกดยืนยัน ────────────────────────
 function BPSection({
-  patient, doctorName, userRole, onNewVisit, onLabSaved, selDoctor, onDoctorChange,
+  patient, doctorName, userRole, onNewVisit,
 }: {
   patient: CardioPatient
   doctorName: string
   userRole: UserRole
   onNewVisit: (v: BPVisit | null) => void
-  onLabSaved?: (labs: Partial<PatientLab>) => void
-  selDoctor: string
-  onDoctorChange: (d: string) => void
 }) {
-  const lastVisit   = patient.visits[patient.visits.length - 1]
-  const alreadyToday = isToday(lastVisit.date)
+  const lastVisit    = patient.visits[patient.visits.length - 1]
+  const recordedToday = lastVisit ? isToday(lastVisit.date) : false
+  const heightM = (patient.profile?.heightCm ?? 0) / 100 || 1.65
 
-  const DOCTORS = ['นพ. วิชาญ สุขใจ', 'พญ. สมหญิง รักษาดี', 'นพ. ทวีศักดิ์ มีโชค']
-
-  const [mode,      setMode]      = useState<'auto' | 'manual'>('auto')
-  const [sbp,       setSbp]       = useState('')
-  const [dbp,       setDbp]       = useState('')
-  const [hr,        setHr]        = useState('')
-  const [wt,        setWt]        = useState(String(lastVisit.weight))
-  const [note,      setNote]      = useState('')
-  const [err,       setErr]       = useState('')
-  const [saving,    setSaving]    = useState(false)
-  const [saved,     setSaved]     = useState(false)
-  const [dbStatus,  setDbStatus]  = useState<'idle'|'ok'|'warn'>('idle')
-
-  // พยาบาล/เทคนิคการแพทย์: ถ้าวัดแล้ววันนี้จะเห็นเป็น read-only ด้วย
-  if (alreadyToday) {
-    return (
-      <div style={{
-        background: 'rgba(0,184,148,.04)', border: '1.5px solid rgba(0,168,114,.25)',
-        borderRadius: 'var(--r)', padding: '18px 20px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#00a872', display: 'inline-block' }} />
-          <span style={{ fontWeight: 700, color: '#007d60' }}>วัดค่าความดันวันนี้แล้ว</span>
-          <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--mono)', marginLeft: 'auto' }}>
-            {new Date(lastVisit.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
-          </span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
-          {[
-            { l: 'SBP', v: lastVisit.sbp,       u: 'mmHg', hi: lastVisit.sbp > 140 },
-            { l: 'DBP', v: lastVisit.dbp,       u: 'mmHg', hi: lastVisit.dbp > 90 },
-            { l: 'HR',  v: lastVisit.heartRate, u: 'bpm',  hi: lastVisit.heartRate < 55 },
-            { l: 'น้ำหนัก', v: lastVisit.weight, u: 'kg', hi: false },
-          ].map(({ l, v, u, hi }) => (
-            <div key={l} style={{ background: '#fff', borderRadius: 'var(--rs)', padding: '12px', textAlign: 'center', border: `1px solid ${hi ? 'rgba(220,38,38,.25)' : 'var(--border)'}` }}>
-              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', color: hi ? 'var(--danger)' : 'var(--accent)' }}>{v}</div>
-              <div style={{ fontSize: 10, color: 'var(--text3)' }}>{l} ({u})</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text3)' }}>
-          ข้อมูลความดันวันนี้ถูกบันทึกแล้ว — ไม่สามารถแก้ไขได้
-        </div>
-      </div>
-    )
-  }
-
-  if (userRole === 'medtech') {
-    return <LabEntrySection patient={patient} onLabSaved={onLabSaved} />
-  }
-
-  if (saved) {
-    const s = parseInt(sbp), d = parseInt(dbp), h = parseInt(hr)
-    return (
-      <div style={{ background: 'rgba(0,184,148,.04)', border: '1.5px solid rgba(0,168,114,.25)', borderRadius: 'var(--r)', padding: '18px 20px' }}>
-        <div style={{ fontWeight: 700, color: '#007d60', marginBottom: 12 }}>
-          บันทึกค่าความดันวันนี้แล้ว
-          {hasSupabaseEnv && <span style={{ marginLeft: 10, fontSize: 11, fontFamily: 'var(--mono)', color: dbStatus === 'ok' ? '#007d60' : '#9a6700' }}>
-            {dbStatus === 'ok' ? '(Supabase)' : '(Session)'}
-          </span>}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
-          {[['SBP', s, 'mmHg', s > 140], ['DBP', d, 'mmHg', d > 90], ['HR', h, 'bpm', h < 55], ['น้ำหนัก', parseFloat(wt)||lastVisit.weight, 'kg', false]].map(([l, v, u, hi]) => (
-            <div key={String(l)} style={{ background: '#fff', borderRadius: 'var(--rs)', padding: '10px', textAlign: 'center', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--mono)', color: hi ? 'var(--danger)' : 'var(--accent)' }}>{v}</div>
-              <div style={{ fontSize: 10, color: 'var(--text3)' }}>{l} ({u})</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
+  const [sbp,    setSbp]    = useState(recordedToday ? String(lastVisit.sbp) : '')
+  const [dbp,    setDbp]    = useState(recordedToday ? String(lastVisit.dbp) : '')
+  const [hr,     setHr]     = useState(recordedToday ? String(lastVisit.heartRate) : '')
+  const [wt,     setWt]     = useState(lastVisit ? String(lastVisit.weight) : '')
+  const [resp,   setResp]   = useState(recordedToday && lastVisit.resp ? String(lastVisit.resp) : '')
+  const [o2sat,  setO2sat]  = useState(recordedToday && lastVisit.o2sat ? String(lastVisit.o2sat) : '')
+  const [temp,   setTemp]   = useState(recordedToday && lastVisit.temp ? String(lastVisit.temp) : '')
+  const [note,   setNote]   = useState('')
+  const [err,    setErr]    = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+  const [dbStatus, setDbStatus] = useState<'idle'|'ok'|'warn'>('idle')
 
   const handleSave = async () => {
     const s = parseInt(sbp), d = parseInt(dbp), h = parseInt(hr), w = parseFloat(wt)
@@ -306,10 +647,16 @@ function BPSection({
     if (d < 40 || d > 160) { setErr('DBP ไม่อยู่ในช่วงที่เป็นไปได้ (40–160)'); return }
     if (h < 30 || h > 200) { setErr('Heart Rate ไม่อยู่ในช่วงที่เป็นไปได้'); return }
 
-    const today = new Date().toISOString().split('T')[0]
-    const weight = w || lastVisit.weight
-    const bmi    = w ? parseFloat((w / (1.65 ** 2)).toFixed(1)) : lastVisit.bmi
-    const newVisit: BPVisit = { date: today, sbp: s, dbp: d, heartRate: h, weight, bmi, note: note.trim() || undefined, recordedBy: doctorName }
+    const today  = new Date().toISOString().split('T')[0]
+    const weight = w || lastVisit?.weight || 0
+    const bmi    = weight ? parseFloat((weight / (heightM ** 2)).toFixed(1)) : lastVisit?.bmi ?? 0
+    const newVisit: BPVisit = {
+      date: today, sbp: s, dbp: d, heartRate: h, weight, bmi,
+      resp: resp ? parseFloat(resp) : undefined,
+      o2sat: o2sat ? parseFloat(o2sat) : undefined,
+      temp: temp ? parseFloat(temp) : undefined,
+      note: note.trim() || undefined, recordedBy: doctorName,
+    }
 
     setSaving(true); setErr('')
     if (hasSupabaseEnv && patient.dbId) {
@@ -319,103 +666,103 @@ function BPSection({
     setSaving(false); onNewVisit(newVisit); setSaved(true)
   }
 
-  // เปรียบเทียบค่าล่าสุดจาก history
-  const historyAvg = patient.visits.length >= 3
-    ? Math.round(patient.visits.slice(-3).reduce((s, v) => s + v.sbp, 0) / 3)
-    : null
+  if (saved) {
+    const s = parseInt(sbp), d = parseInt(dbp), h = parseInt(hr)
+    return (
+      <div style={{ background: 'rgba(0,184,148,.04)', border: '1.5px solid rgba(0,168,114,.25)', borderRadius: 'var(--r)', padding: '18px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, color: '#007d60', flex: 1 }}>
+            บันทึกค่าความดันวันนี้แล้ว
+            {hasSupabaseEnv && <span style={{ marginLeft: 10, fontSize: 11, fontFamily: 'var(--mono)', color: dbStatus === 'ok' ? '#007d60' : '#9a6700' }}>{dbStatus === 'ok' ? '(Supabase)' : '(Session)'}</span>}
+          </div>
+          <button onClick={() => setSaved(false)}
+            style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', background: 'rgba(0,168,114,.08)', border: '1px solid rgba(0,168,114,.3)', color: '#007d60' }}>
+            แก้ไขค่าความดัน
+          </button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+          {[['SBP', s, 'mmHg', s > 140], ['DBP', d, 'mmHg', d > 90], ['HR', h, 'bpm', h < 55], ['น้ำหนัก', parseFloat(wt) || lastVisit?.weight || 0, 'kg', false]].map(([l, v, u, hi]) => (
+            <div key={String(l)} style={{ background: '#fff', borderRadius: 'var(--rs)', padding: '10px', textAlign: 'center', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--mono)', color: hi ? 'var(--danger)' : 'var(--accent)' }}>{v as number}</div>
+              <div style={{ fontSize: 10, color: 'var(--text3)' }}>{l} ({u})</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text3)' }}>กด <strong>แก้ไขค่าความดัน</strong> หากต้องการปรับค่าที่บันทึก</div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ background: 'rgba(217,119,6,.04)', border: '1.5px solid rgba(217,119,6,.2)', borderRadius: 'var(--r)', padding: '18px 20px' }}>
-      {/* Doctor selection (nurse only, optional) */}
-      {userRole === 'nurse' && (
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-            แพทย์ผู้ดูแล <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(ถ้าเลือก — แพทย์คนนั้นจะรับผิดชอบเคสนี้)</span>
-          </label>
-          <select value={selDoctor} onChange={e => onDoctorChange(e.target.value)}
-            style={{ width: '100%', padding: '9px 12px', background: '#fff', border: `1.5px solid ${selDoctor ? '#3b82f6' : 'var(--border2)'}`, borderRadius: 'var(--rs)', fontSize: 13, cursor: 'pointer', color: 'var(--text)' }}>
-            <option value="">— ไม่ระบุ (ผู้บันทึกล่าสุดเป็นผู้ดูแล) —</option>
-            {DOCTORS.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-          {selDoctor && <div style={{ fontSize: 11, color: '#3b82f6', marginTop: 3 }}>แพทย์ {selDoctor} จะเป็นผู้รับผิดชอบเคสนี้</div>}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <span style={{ fontWeight: 700, color: 'var(--warn)', fontSize: 14, alignSelf: 'center', flex: 1 }}>
+          กรอกค่าความดันวันนี้ (กรอกเอง)
+          <span style={{ fontSize: 11, color: userRole === 'nurse' ? '#3b82f6' : 'var(--accent)', marginLeft: 8, fontFamily: 'var(--mono)' }}>
+            [{userRole === 'nurse' ? 'พยาบาล' : 'แพทย์'}]
+          </span>
+        </span>
+      </div>
+
+      {/* ค่าล่าสุดที่ดึงจากระบบ (เช่น ที่พยาบาลกรอกไว้) */}
+      {lastVisit && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--rs)', padding: '10px 12px', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>
+            ค่าล่าสุดที่บันทึกในระบบ (ดึงจาก Supabase) · {new Date(lastVisit.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+            {lastVisit.recordedBy ? ` · โดย ${lastVisit.recordedBy}` : ''}
+          </div>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>
+            <span>SBP/DBP <strong style={{ color: lastVisit.sbp > 140 ? '#dc2626' : 'var(--accent)' }}>{lastVisit.sbp}/{lastVisit.dbp}</strong></span>
+            <span>HR <strong>{lastVisit.heartRate}</strong></span>
+            <span>น้ำหนัก <strong>{lastVisit.weight} kg</strong></span>
+          </div>
         </div>
       )}
 
-      {/* Mode toggle */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        <span style={{ fontWeight: 700, color: 'var(--warn)', fontSize: 14, alignSelf: 'center', flex: 1 }}>
-          กรอกค่าความดันวันนี้
-          {userRole === 'nurse' && <span style={{ fontSize: 11, color: '#3b82f6', marginLeft: 8, fontFamily: 'var(--mono)' }}>[พยาบาล]</span>}
-        </span>
-        <button
-          onClick={() => setMode('auto')}
-          style={{
-            fontSize: 11, padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
-            background: mode === 'auto' ? 'rgba(0,168,114,.1)' : 'transparent',
-            border: `1.5px solid ${mode === 'auto' ? 'var(--accent)' : 'var(--border2)'}`,
-            color: mode === 'auto' ? 'var(--accent)' : 'var(--text3)',
-          }}
-        >ดึงค่าล่าสุด</button>
-        <button
-          onClick={() => setMode('manual')}
-          style={{
-            fontSize: 11, padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
-            background: mode === 'manual' ? 'rgba(217,119,6,.1)' : 'transparent',
-            border: `1.5px solid ${mode === 'manual' ? 'var(--warn)' : 'var(--border2)'}`,
-            color: mode === 'manual' ? 'var(--warn)' : 'var(--text3)',
-          }}
-        >กรอกเอง</button>
-      </div>
-
-      {/* Auto mode: แสดงค่าล่าสุดจาก history เป็น hint */}
-      {mode === 'auto' && historyAvg && (
-        <div style={{
-          background: 'rgba(59,130,246,.05)', border: '1px solid rgba(59,130,246,.2)',
-          borderRadius: 'var(--rs)', padding: '10px 14px', marginBottom: 14, fontSize: 12,
-        }}>
-          <strong style={{ color: '#3b82f6' }}>ข้อมูลจาก 3 visit ล่าสุด:</strong>
-          {' '}SBP เฉลี่ย {historyAvg} mmHg ·{' '}
-          DBP เฉลี่ย {Math.round(patient.visits.slice(-3).reduce((s, v) => s + v.dbp, 0) / 3)} mmHg ·{' '}
-          HR เฉลี่ย {Math.round(patient.visits.slice(-3).reduce((s, v) => s + v.heartRate, 0) / 3)} bpm
-          <br />
-          <span style={{ color: 'var(--text3)' }}>กรุณาวัดใหม่วันนี้และกรอกค่าจริงด้านล่าง</span>
+      {recordedToday && (
+        <div style={{ background: 'rgba(59,130,246,.05)', border: '1px solid rgba(59,130,246,.2)', borderRadius: 'var(--rs)', padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#1d4ed8' }}>
+          มีการบันทึกค่าความดันวันนี้ไว้แล้ว — คุณสามารถแก้ไขและบันทึกซ้ำได้
         </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
         {[
-          { l: 'SBP (mmHg)*', val: sbp, set: setSbp, ph: historyAvg ? String(historyAvg) : '120' },
+          { l: 'SBP (mmHg)*', val: sbp, set: setSbp, ph: '120' },
           { l: 'DBP (mmHg)*', val: dbp, set: setDbp, ph: '80' },
           { l: 'HR (bpm)*',   val: hr,  set: setHr,  ph: '72' },
-          { l: 'น้ำหนัก (kg)', val: wt, set: setWt, ph: String(lastVisit.weight) },
+          { l: 'น้ำหนัก (kg)', val: wt, set: setWt, ph: String(lastVisit?.weight ?? '') },
         ].map(({ l, val, set, ph }) => (
           <div key={l}>
             <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>{l}</label>
-            <input
-              type="number" value={val}
-              onChange={e => set(e.target.value)} placeholder={ph}
-              style={{
-                width: '100%', padding: '10px 12px',
-                background: '#fff', border: '1.5px solid var(--border2)',
-                borderRadius: 'var(--rs)', color: 'var(--text)',
-                fontFamily: 'var(--mono)', fontSize: 15, outline: 'none',
-              }}
-              onFocus={e => e.target.style.borderColor = 'var(--accent)'}
-              onBlur={e => e.target.style.borderColor = ''}
-            />
+            <input type="number" min="0" value={val} onChange={e => set(nn(e.target.value))} placeholder={ph}
+              style={{ width: '100%', padding: '10px 12px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
+              onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = ''} />
           </div>
         ))}
       </div>
-      {/* หมายเหตุ */}
+
+      {/* สัญญาณชีพเพิ่มเติม (ไม่บังคับ) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+        {[
+          { l: 'RR (/min)', val: resp, set: setResp, ph: '18' },
+          { l: 'O₂ Sat (%)', val: o2sat, set: setO2sat, ph: '98' },
+          { l: 'อุณหภูมิ (°C)', val: temp, set: setTemp, ph: '36.8' },
+        ].map(({ l, val, set, ph }) => (
+          <div key={l}>
+            <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>{l}</label>
+            <input type="number" min="0" value={val} onChange={e => set(nn(e.target.value))} placeholder={ph}
+              style={{ width: '100%', padding: '9px 12px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+              onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = ''} />
+          </div>
+        ))}
+      </div>
+
       <div style={{ marginBottom: 12 }}>
         <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>หมายเหตุการกรอกความดัน (ถ้ามี)</label>
-        <input
-          type="text" value={note} onChange={e => setNote(e.target.value)}
+        <input type="text" value={note} onChange={e => setNote(e.target.value)}
           placeholder="เช่น ผู้ป่วยมีอาการเจ็บหน้าอก, วัดซ้ำ 2 ครั้ง..."
           style={{ width: '100%', padding: '10px 12px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = 'var(--accent)'}
-          onBlur={e => e.target.style.borderColor = ''}
-        />
+          onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = ''} />
       </div>
       {err && <div style={{ fontSize: 13, color: '#dc2626', marginBottom: 10 }}>{err}</div>}
       <button className={styles.btnP} onClick={handleSave} disabled={saving}>
@@ -428,19 +775,14 @@ function BPSection({
 // ── Visit History ─────────────────────────────────────────────────────────────
 function VisitHistory({ visits, defaultExpanded }: { visits: CardioPatient['visits']; defaultExpanded?: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
-  const shown = expanded
-    ? visits
-    : visits.length <= 2
-      ? visits
-      : [visits[0], visits[visits.length - 1]]
+  const shown = expanded ? visits : visits.length <= 2 ? visits : [visits[0], visits[visits.length - 1]]
   const fmt = (d: string) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
   return (
     <div>
       {[...shown].reverse().map((v, i) => (
         <div key={i} style={{ marginBottom: v.note ? 2 : 6 }}>
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '10px 14px',
+            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
             background: isToday(v.date) ? 'rgba(0,184,148,.05)' : 'var(--bg3)',
             border: `1px solid ${isToday(v.date) ? 'rgba(0,168,114,.3)' : 'var(--border)'}`,
             borderRadius: v.note ? 'var(--rs) var(--rs) 0 0' : 'var(--rs)', fontSize: 13,
@@ -449,9 +791,7 @@ function VisitHistory({ visits, defaultExpanded }: { visits: CardioPatient['visi
             <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', width: 80, flexShrink: 0 }}>
               {fmt(v.date)}{isToday(v.date) ? ' *' : ''}
             </span>
-            <span style={{ fontWeight: 700, color: v.sbp > 140 ? 'var(--warn)' : 'var(--text)' }}>
-              {v.sbp}/{v.dbp}
-            </span>
+            <span style={{ fontWeight: 700, color: v.sbp > 140 ? 'var(--warn)' : 'var(--text)' }}>{v.sbp}/{v.dbp}</span>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>mmHg</span>
             <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text2)' }}>HR {v.heartRate} · {v.weight} kg</span>
             {v.recordedBy && <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginLeft: 6 }}>by {v.recordedBy}</span>}
@@ -477,16 +817,9 @@ function DoctorRecordsSection({ records }: { records: DoctorRecord[] }) {
   const [expanded, setExpanded] = useState(false)
   const sorted = [...records].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
   const shown = expanded ? sorted : sorted.slice(-2)
-  const REC_COLOR: Record<string, string> = {
-    INTENSIFY: '#ef4444', URGENT_REVIEW: '#dc2626',
-    REDUCE: '#f59e0b', CONTINUE: '#00a872', MONITOR: '#6b7280', SWITCH: '#8b5cf6',
-  }
-  const REC_TH: Record<string, string> = {
-    INTENSIFY: 'เพิ่มยา', URGENT_REVIEW: 'เร่งด่วน',
-    REDUCE: 'ลดยา', CONTINUE: 'คงยาเดิม', MONITOR: 'ติดตาม', SWITCH: 'เปลี่ยนยา',
-  }
+  const REC_COLOR: Record<string, string> = { INTENSIFY: '#ef4444', URGENT_REVIEW: '#dc2626', REDUCE: '#f59e0b', CONTINUE: '#00a872', MONITOR: '#6b7280', SWITCH: '#8b5cf6' }
+  const REC_TH: Record<string, string> = { INTENSIFY: 'เพิ่มยา', URGENT_REVIEW: 'เร่งด่วน', REDUCE: 'ลดยา', CONTINUE: 'คงยาเดิม', MONITOR: 'ติดตาม', SWITCH: 'เปลี่ยนยา' }
   const fmt = (d: string) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
-
   return (
     <div>
       {shown.map((r, i) => (
@@ -495,11 +828,7 @@ function DoctorRecordsSection({ records }: { records: DoctorRecord[] }) {
             <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)', width: 76, flexShrink: 0 }}>{fmt(r.date)}</span>
             <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>{r.doctorName}</span>
             {r.recommendation && (
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontFamily: 'var(--mono)', fontWeight: 700,
-                background: `${REC_COLOR[r.recommendation] ?? '#6b7280'}15`,
-                color: REC_COLOR[r.recommendation] ?? '#6b7280',
-                border: `1px solid ${REC_COLOR[r.recommendation] ?? '#6b7280'}40`,
-              }}>{REC_TH[r.recommendation] ?? r.recommendation}</span>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontFamily: 'var(--mono)', fontWeight: 700, background: `${REC_COLOR[r.recommendation] ?? '#6b7280'}15`, color: REC_COLOR[r.recommendation] ?? '#6b7280', border: `1px solid ${REC_COLOR[r.recommendation] ?? '#6b7280'}40` }}>{REC_TH[r.recommendation] ?? r.recommendation}</span>
             )}
             {r.refId && <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.refId}</span>}
           </div>
@@ -523,68 +852,81 @@ function DoctorRecordsSection({ records }: { records: DoctorRecord[] }) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function PatientDetailPage({
-  patient, doctorName, userRole, onBack, onNext, onNurseDone, onNurseNext,
+  patient, doctorName, userRole, onBack, onNext, onFinish,
 }: {
   patient: CardioPatient
   doctorName: string
   userRole: UserRole
   onBack: () => void
   onNext: (newVisit: BPVisit | null) => void
-  onNurseDone?: () => void
-  onNurseNext?: (newVisit: BPVisit, selectedDoctor: string) => void
+  onFinish?: (newVisit: BPVisit | null) => void
 }) {
-  const [newVisit,      setNewVisit]      = useState<BPVisit | null>(null)
-  const [savedLabs,     setSavedLabs]     = useState<Partial<PatientLab> | null>(null)
-  const [nurseSelDoctor, setNurseSelDoctor] = useState(patient.treatingDoctor ?? '')
+  const [newVisit,     setNewVisit]     = useState<BPVisit | null>(null)
+  const [savedLabs,    setSavedLabs]    = useState<Partial<PatientLab> | null>(null)
+  const [savedHistory, setSavedHistory] = useState<Partial<PatientProfile> | null>(null)
   const lastV = patient.visits[patient.visits.length - 1]
   const hasComorbidities = Object.values(patient.comorbidities).some(Boolean)
+  const visitCount = patient.visits.length
+  const apptCount  = patient.doctorRecords?.filter(r => r.nextApptDate).length ?? 0
 
-  const handleLabSaved = (labs: Partial<PatientLab>) => setSavedLabs(labs)
+  // ผู้ป่วยใหม่ = ยังไม่มีประวัติซักในระบบ
+  const needsHistory = !patient.profile && userRole === 'nurse'
+
+  const recordedToday = lastV ? isToday(lastV.date) : false
+  const nurseReady   = !!newVisit || recordedToday
+  const medtechReady = !!savedLabs
 
   return (
     <div>
       <div className={styles.stepHdr}>
-        <span className={styles.stepNum}>02 / 05</span>
+        <span className={styles.stepNum}>{userRole === 'doctor' ? '02 / 05' : '02 / 02'}</span>
         <h1 className={styles.stepTitle}>ข้อมูลผู้ป่วย</h1>
       </div>
-      <p className={styles.stepDesc}>ข้อมูลพื้นฐาน ประวัติการรักษา และบันทึกค่าความดัน</p>
+      <p className={styles.stepDesc}>ข้อมูลพื้นฐาน ประวัติการรักษา และบันทึกค่าตามบทบาท</p>
 
       {/* Patient Card */}
-      <div style={{
-        background: 'var(--bg2)', border: '1.5px solid var(--border2)',
-        borderRadius: 'var(--r)', padding: '22px', marginBottom: 16,
-        boxShadow: '0 2px 12px rgba(0,160,114,.06)',
-      }}>
+      <div style={{ background: 'var(--bg2)', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', padding: '22px', marginBottom: 16, boxShadow: '0 2px 12px rgba(0,160,114,.06)' }}>
         <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
           <PatientAvatar patient={patient} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>{patient.name}</div>
             <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7 }}>
               อายุ <strong>{patient.age}</strong> ปี · เพศ{patient.sex}
-              {patient.treatingDoctor && <> · แพทย์ผู้ดูแล: <strong>{patient.treatingDoctor}</strong></>}
             </div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
-              รหัสผู้ป่วย: {patient.id}
-            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>รหัสผู้ป่วย: {patient.id}</div>
             <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-              <span className={[styles.riskBadge, styles.riskLow].join(' ')}>
-                {patient.medications.length} กลุ่มยา
-              </span>
-              <span className={[styles.riskBadge, styles.riskModerate].join(' ')}>
-                {patient.visits.length} visits
-              </span>
-              {hasComorbidities && (
-                <span className={[styles.riskBadge, styles.riskHigh].join(' ')}>มีโรคร่วม</span>
-              )}
+              <span className={[styles.riskBadge, styles.riskLow].join(' ')}>{patient.medications.length} กลุ่มยา</span>
+              <span className={[styles.riskBadge, styles.riskModerate].join(' ')}>มาตรวจ {visitCount} ครั้ง</span>
+              <span className={[styles.riskBadge, styles.riskLow].join(' ')}>นัดจากแพทย์ {apptCount} ครั้ง</span>
+              {hasComorbidities && <span className={[styles.riskBadge, styles.riskHigh].join(' ')}>มีโรคร่วม</span>}
             </div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>นับจากข้อมูลที่บันทึกใน Supabase</div>
           </div>
         </div>
       </div>
 
+      {/* ประวัติและข้อมูลสำคัญ — ให้แพทย์เห็นมากกว่าแค่ค่าความดัน */}
+      <PatientHistoryCard patient={savedHistory ? { ...patient, profile: { ...patient.profile, ...savedHistory } } : patient} />
+
+      {/* ฟอร์มซักประวัติ — แสดงอัตโนมัติสำหรับพยาบาลเมื่อผู้ป่วยยังไม่มีประวัติ */}
+      {userRole === 'nurse' && (needsHistory || (!needsHistory && !savedHistory)) && (
+        <div style={{ marginBottom: 16 }}>
+          {!needsHistory && (
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>ต้องการแก้ไขหรือเพิ่มประวัติผู้ป่วย?</span>
+            </div>
+          )}
+          <HistoryEntrySection
+            patient={patient}
+            onSaved={profile => setSavedHistory(profile)}
+          />
+        </div>
+      )}
+
       {/* Vitals Grid */}
       <div className={styles.detailGrid} style={{ marginBottom: 16 }}>
         {[
-          { l: 'BMI', v: `${lastV.bmi}`, warn: lastV.bmi >= 25 },
+          { l: 'BMI', v: `${lastV?.bmi ?? '-'}`, warn: (lastV?.bmi ?? 0) >= 25 },
           { l: 'HbA1c', v: `${patient.labs.hba1c ?? '-'}%`, warn: (patient.labs.hba1c ?? 0) > 7.5 },
           { l: 'eGFR', v: `${patient.labs.egfr ?? '-'}`, warn: (patient.labs.egfr ?? 100) < 60 },
           { l: 'LDL', v: `${patient.labs.ldl ?? '-'} mg/dL`, warn: (patient.labs.ldl ?? 0) > 130 },
@@ -601,23 +943,17 @@ export default function PatientDetailPage({
       {/* Comorbidities */}
       <div className={styles.lbl}>โรคร่วม</div>
       <div className={styles.comorbRow} style={{ marginBottom: 16 }}>
-        {!hasComorbidities && (
-          <span className={[styles.comorbTag, styles.comorbNone].join(' ')}>ไม่มีโรคร่วมสำคัญ</span>
-        )}
-        {Object.entries(patient.comorbidities).map(([k, v]) =>
-          v ? <span key={k} className={styles.comorbTag}>{COMORBIDITY_LABEL[k]}</span> : null
-        )}
+        {!hasComorbidities && <span className={[styles.comorbTag, styles.comorbNone].join(' ')}>ไม่มีโรคร่วมสำคัญ</span>}
+        {Object.entries(patient.comorbidities).map(([k, v]) => v ? <span key={k} className={styles.comorbTag}>{COMORBIDITY_LABEL[k]}</span> : null)}
       </div>
 
       {/* Medications */}
       <div className={styles.lbl}>ยาที่ใช้อยู่ปัจจุบัน</div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+        {patient.medications.length === 0 && <span style={{ fontSize: 13, color: 'var(--text3)' }}>ยังไม่มีรายการยา</span>}
         {patient.medications.map((m, i) => (
-          <div key={i} style={{
-            background: 'var(--bg3)', border: `1.5px solid ${DRUG_COLOR[m.drugClass] ?? '#999'}40`,
-            borderRadius: 'var(--rs)', padding: '10px 14px',
-          }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: DRUG_COLOR[m.drugClass] ?? '#999', fontFamily: 'var(--mono)', marginBottom: 2 }}>{m.drugClass}</div>
+          <div key={i} style={{ background: 'var(--bg3)', border: `1.5px solid ${drugColor(m.drugClass)}40`, borderRadius: 'var(--rs)', padding: '10px 14px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: drugColor(m.drugClass), fontFamily: 'var(--mono)', marginBottom: 2 }}>{drugLabel(m.drugClass)}</div>
             <div style={{ fontWeight: 600, fontSize: 13 }}>{m.drugName}</div>
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>{m.dose} · {m.frequency}</div>
           </div>
@@ -626,11 +962,14 @@ export default function PatientDetailPage({
 
       <div className={styles.divider} />
 
-      {/* BP / Lab Today */}
+      {/* BP / Lab Today — ตามบทบาท */}
       <div className={styles.lbl} style={{ marginBottom: 10 }}>
-        {userRole === 'medtech' ? 'บันทึกผลการตรวจทางห้องปฏิบัติการ' : 'ค่าความดันโลหิต'}
+        {userRole === 'medtech' ? 'บันทึกผลการตรวจทางห้องปฏิบัติการ' : 'บันทึกค่าความดันโลหิตวันนี้'}
       </div>
-      <BPSection patient={patient} doctorName={doctorName} userRole={userRole} onNewVisit={setNewVisit} onLabSaved={handleLabSaved} selDoctor={nurseSelDoctor} onDoctorChange={setNurseSelDoctor} />
+      {userRole === 'medtech'
+        ? <LabEntrySection patient={patient} onLabSaved={setSavedLabs} />
+        : <BPSection patient={patient} doctorName={doctorName} userRole={userRole} onNewVisit={setNewVisit} />
+      }
 
       <div className={styles.divider} />
 
@@ -655,46 +994,24 @@ export default function PatientDetailPage({
       )}
 
       {/* Visit History */}
-      <div className={styles.lbl} style={{ marginBottom: 10 }}>
-        ประวัติการรักษา (Visit History)
-        {userRole === 'nurse' && <span style={{ fontSize: 11, color: '#3b82f6', marginLeft: 8, fontFamily: 'var(--mono)' }}>— รวมหมายเหตุครั้งก่อนๆ</span>}
-      </div>
+      <div className={styles.lbl} style={{ marginBottom: 10 }}>ประวัติการรักษา (Visit History)</div>
       <VisitHistory visits={patient.visits} defaultExpanded={userRole === 'nurse'} />
 
       <div className={styles.btnRow}>
         <button className={styles.btnS} onClick={onBack}>← กลับ</button>
-        {userRole === 'medtech' ? (
-          <button
-            className={styles.btnP}
-            style={{ background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)' }}
-            onClick={() => onNext(null)}
-          >
-            ดู BP Trend →
-          </button>
+        {userRole === 'doctor' ? (
+          <button className={styles.btnP} onClick={() => onNext(newVisit)}>ดู BP Trend →</button>
         ) : userRole === 'nurse' ? (
-          <>
-            <button
-              className={styles.btnS}
-              style={{ opacity: newVisit ? 1 : 0.5 }}
-              onClick={() => newVisit ? onNurseDone?.() : undefined}
-              disabled={!newVisit}
-              title={!newVisit ? 'กรุณาบันทึกค่าความดันก่อน' : undefined}
-            >
-              บันทึกและเสร็จสิ้น ✓
-            </button>
-            <button
-              className={styles.btnP}
-              style={{ background: newVisit ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : undefined, opacity: newVisit ? 1 : 0.5 }}
-              onClick={() => newVisit ? onNurseNext?.(newVisit, nurseSelDoctor) : undefined}
-              disabled={!newVisit}
-              title={!newVisit ? 'กรุณาบันทึกค่าความดันก่อน' : undefined}
-            >
-              ดู BP Trend →
-            </button>
-          </>
+          <button className={styles.btnP} style={{ opacity: nurseReady ? 1 : 0.5, minWidth: 180 }}
+            onClick={() => nurseReady ? onFinish?.(newVisit) : undefined} disabled={!nurseReady}
+            title={!nurseReady ? 'กรุณาบันทึกค่าความดันก่อน' : undefined}>
+            บันทึกและเสร็จสิ้น ✓
+          </button>
         ) : (
-          <button className={styles.btnP} onClick={() => onNext(newVisit)}>
-            ดู BP Trend →
+          <button className={styles.btnP} style={{ background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)', opacity: medtechReady ? 1 : 0.5, minWidth: 180 }}
+            onClick={() => medtechReady ? onFinish?.(null) : undefined} disabled={!medtechReady}
+            title={!medtechReady ? 'กรุณาบันทึกผลแลปก่อน' : undefined}>
+            บันทึกและเสร็จสิ้น ✓
           </button>
         )}
       </div>

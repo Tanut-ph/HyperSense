@@ -1,101 +1,79 @@
 # HyperSense — เอกสารระบบ
-### ระบบช่วยตัดสินใจทางคลินิก — ความดันโลหิตสูงและความเสี่ยงโรคหัวใจ
+### ระบบช่วยตัดสินใจทางคลินิก — ความดันโลหิตสูงและความเสี่ยงโรคหัวใจและหลอดเลือด
 
-> **ประเภท:** Clinical Decision Support System (CDSS)  
-> **Stack:** Next.js 15 · TypeScript · Supabase · Python XGBoost  
-> **วันที่:** มิถุนายน 2569
+> **ประเภท:** Clinical Decision Support System (CDSS)
+> **Stack:** Next.js 16 · TypeScript · Supabase (PostgreSQL) · Python FastAPI + XGBoost
+> **อัปเดต:** มิถุนายน 2569
 
 ---
 
 ## สารบัญ
-
 1. [ภาพรวมระบบ](#1-ภาพรวมระบบ)
-2. [User Roles และสิทธิ์](#2-user-roles-และสิทธิ์)
-3. [User Flow (5 Steps)](#3-user-flow-5-steps)
+2. [บทบาทผู้ใช้และสิทธิ์](#2-บทบาทผู้ใช้และสิทธิ์)
+3. [ขั้นตอนการใช้งาน (แยกตามบทบาท)](#3-ขั้นตอนการใช้งาน)
 4. [โครงสร้างไฟล์](#4-โครงสร้างไฟล์)
-5. [Risk Engine](#5-risk-engine)
-6. [Medication Decision Engine](#6-medication-decision-engine)
-7. [ML Engine (XGBoost + SHAP)](#7-ml-engine-xgboost--shap)
-8. [ยา 7 กลุ่มหลัก](#8-ยา-7-กลุ่มหลัก)
-9. [ผลตรวจทางห้องปฏิบัติการ](#9-ผลตรวจทางห้องปฏิบัติการ)
-10. [Database Schema](#10-database-schema)
-11. [การติดตั้งและรัน](#11-การติดตั้งและรัน)
-12. [การเชื่อมต่อ Supabase](#12-การเชื่อมต่อ-supabase)
-13. [ข้อจำกัดและคำเตือน](#13-ข้อจำกัดและคำเตือน)
+5. [ตัวแปร / Data Model](#5-ตัวแปร--data-model)
+6. [ยาความดัน 7 กลุ่ม + การใช้ร่วม](#6-ยาความดัน-7-กลุ่ม)
+7. [การวิเคราะห์ความเสี่ยงเชิงคลินิก](#7-การวิเคราะห์ความเสี่ยง)
+8. [ML Backend (XGBoost)](#8-ml-backend)
+9. [ฐานข้อมูลและ SQL](#9-ฐานข้อมูลและ-sql)
+10. [การติดตั้งและรัน](#10-การติดตั้งและรัน)
+11. [ข้อจำกัดและคำเตือน](#11-ข้อจำกัด)
 
 ---
 
 ## 1. ภาพรวมระบบ
 
-HyperSense เป็นเว็บแอปพลิเคชันสำหรับบุคลากรทางการแพทย์ ช่วยวิเคราะห์ผู้ป่วยความดันโลหิตสูงจากข้อมูล EMR และแนะนำแนวทางการรักษาด้วย Machine Learning
+HyperSense เป็นเว็บแอปสำหรับบุคลากรทางการแพทย์ ช่วยดูแลผู้ป่วยความดันโลหิตสูงโดยรวมข้อมูลไว้ที่เดียว
+แพทย์เห็น **ประวัติและข้อมูลสำคัญทั้งหมด** (ไม่ใช่แค่ค่าความดันวันนี้) เพื่อประกอบการตัดสินใจปรับยาและนัดหมาย
 
 | ความสามารถ | รายละเอียด |
 |---|---|
-| ค้นหาผู้ป่วย | ค้นหาจากรหัสผู้ป่วย |
-| ข้อมูลผู้ป่วย | ประวัติการรักษา ยา โรคร่วม ผล Lab |
-| บันทึก BP วันนี้ | พยาบาลกรอกค่าความดัน, เทคนิคการแพทย์กรอกผลแลป |
-| BP Trend | กราฟ SBP/DBP + Linear Regression |
-| ML Risk Prediction | XGBoost ประเมิน HF / Stroke / CAD / CKD / AF |
-| Medication Support | แนะนำยา 7 กลุ่ม + ตรวจสอบยาที่ขัดแย้งกัน |
-| สรุปและบันทึก | แก้ไขยา + วันนัดพบ + บันทึกลง Supabase |
+| ค้นหาผู้ป่วย | จากรหัสผู้ป่วย (ดึงจาก Supabase) |
+| บันทึกค่าตามบทบาท | พยาบาลกรอกความดัน/สัญญาณชีพ · เทคนิคการแพทย์กรอกผลแลป — **แก้ไขได้หลังกดยืนยัน** |
+| ประวัติ + ข้อมูลสำคัญ | โรคร่วม ASCVD เบาหวาน ไต สูบบุหรี่ ดื่มเหล้า ตั้งครรภ์ ผ่าตัด ฯลฯ |
+| BP Trend | กราฟ SBP/DBP + เส้นแนวโน้ม (Linear Regression) |
+| วิเคราะห์ความเสี่ยง | ระดับความเสี่ยง + Stroke/MACE/Progression (rule-based โปร่งใส หรือ XGBoost เมื่อเชื่อมต่อ) |
+| คำแนะนำยา | ยา 7 กลุ่ม + เตือนยาตีกัน/ซ้ำกลุ่ม + ข้อห้ามในผู้ป่วยพิเศษ |
+| สรุปและบันทึก | แพทย์ปรับยา + วันนัด (ที่เดียว) + บันทึกลง Supabase |
 
 ### สิ่งที่ระบบไม่ทำ
-- ไม่สั่งยาแทนแพทย์
-- ไม่ตัดสินใจทางคลินิกโดยอัตโนมัติ
-- คำแนะนำ AI เป็นเพียงข้อมูลประกอบการตัดสินใจ
+- ไม่สั่งยาแทนแพทย์ · ไม่ตัดสินใจทางคลินิกอัตโนมัติ
+- คำแนะนำทั้งหมดเป็น *ข้อมูลประกอบการตัดสินใจ* เท่านั้น
 
 ---
 
-## 2. User Roles และสิทธิ์
+## 2. บทบาทผู้ใช้และสิทธิ์
 
-| Role | Username (Demo) | สิทธิ์ |
+| บทบาท | Staff ID (Demo) | สิทธิ์ |
 |---|---|---|
-| แพทย์ (doctor) | doctor1, doctor2 | เข้าถึงทุกส่วน แก้ไขยา บันทึกข้อมูล |
-| พยาบาล (nurse) | nurse1 | กรอกค่าความดันโลหิตประจำวัน |
-| เทคนิคการแพทย์ (medtech) | medtech1 | บันทึกผลตรวจทางห้องปฏิบัติการ |
+| แพทย์ (doctor) | DR001, DR002, DR003 | เห็นข้อมูลครบ · วิเคราะห์ความเสี่ยง · แก้ไขยา/นัดหมาย · บันทึกการรักษา |
+| พยาบาล (nurse) | NR001 | ค้นหาผู้ป่วย · กรอก/แก้ไขค่าความดันและสัญญาณชีพ → จบ |
+| เทคนิคการแพทย์ (medtech) | MT001 | ค้นหาผู้ป่วย · กรอก/แก้ไขผลแลป → จบ |
 
 รหัสผ่านทุกบัญชี Demo: `1234`
+> **หมายเหตุ:** ระบบไม่มีแนวคิด "แพทย์ผู้ดูแล (treating doctor)" แล้ว — แพทย์ทุกคนที่ล็อกอินสามารถดูแลและบันทึกได้
 
 ---
 
-## 3. User Flow (5 Steps)
+## 3. ขั้นตอนการใช้งาน
 
 ```
-[Login] → [Step 1: ค้นหาผู้ป่วย] → [Step 2: ข้อมูลผู้ป่วย]
-→ [Step 3: BP Trend] → [Step 4: ML Risk + แนะนำยา] → [Step 5: สรุปและบันทึก]
+[Login] → [ค้นหาผู้ป่วย] → แยกตามบทบาท
 ```
 
-### Step 1 — ค้นหาผู้ป่วย (PatientSearchPage)
-- กรอกรหัสผู้ป่วย 5-7 หลัก
-- ดึงข้อมูลจาก Supabase (หรือ Mock Data ถ้าไม่มี env)
+**พยาบาล / เทคนิคการแพทย์ (2 ขั้น):**
+```
+ค้นหาผู้ป่วย → กรอก/แก้ไขข้อมูลของบทบาทตน → กด "บันทึกและเสร็จสิ้น"
+```
+- กดยืนยันแล้วยัง **แก้ไขซ้ำได้** (กดปุ่ม "แก้ไข") — ระบบ upsert ค่าของวันเดียวกัน
 
-### Step 2 — ข้อมูลผู้ป่วย (PatientDetailPage)
-- Card ข้อมูลพื้นฐาน (ชื่อ อายุ เพศ แพทย์ผู้ดูแล)
-- Grid ค่าแลป: BMI, HbA1c, eGFR, LDL, Creatinine, Potassium
-- โรคร่วม (Comorbidities)
-- ยาที่ใช้ปัจจุบัน
-- **พยาบาล**: ฟอร์มกรอก SBP / DBP / HR / น้ำหนัก
-- **เทคนิคการแพทย์**: ฟอร์มบันทึกผลตรวจ 15 รายการ (6 กลุ่ม)
-- ประวัติ Visit: แสดง visit แรก + ล่าสุด (ขยายได้ดูทั้งหมด)
-
-### Step 3 — BP Trend (BPTrendPage)
-- กราฟ SBP/DBP timeline (SVG)
-- Linear Regression Trend Line
-- คาดการณ์ SBP ใน 1 เดือนและ 3 เดือน
-
-### Step 4 — ML Risk + แนะนำยา (RiskMedicationPage)
-- Overall Cardiovascular Risk Level (ภาษาไทย)
-- Score Cards: Stroke Risk % / MACE Risk % / HTN Progression %
-- ML Risk Analysis (XGBoost + SHAP หรือ Rule-based fallback)
-- แนวทางการปรับยา (CONTINUE / INTENSIFY / REDUCE / SWITCH / MONITOR)
-- ปัจจัยที่ส่งผลต่อความเสี่ยง (Risk Factors ranked by weight)
-
-### Step 5 — สรุปและบันทึก (SummaryPage)
-- สรุป Patient Card + Risk Level + คำแนะนำ
-- **แพทย์**: แก้ไขยา (7 กลุ่ม, dropdown ชื่อยาตามกลุ่ม, dropdown ความถี่)
-- ช่องวันนัดพบ (บังคับกรอก) + ปุ่มลัด 1/2 สัปดาห์ / 1/3 เดือน
-- Validation: ต้องกรอกทุกช่องในยา + วันนัดพบก่อนบันทึก
-- บันทึกลง Supabase หรือ Session (Demo mode) + แสดง Ref ID
+**แพทย์ (5 ขั้น):**
+```
+ค้นหาผู้ป่วย → ข้อมูล+ประวัติสำคัญ → BP Trend → วิเคราะห์ความเสี่ยง+แนะนำยา → สรุปและบันทึก
+```
+- หน้าข้อมูลผู้ป่วยมีการ์ด **"ประวัติและข้อมูลสำคัญ"** (โรคร่วม ASCVD ไลฟ์สไตล์ ตั้งครรภ์ ผ่าตัด ฯลฯ)
+- หน้าสรุป: แก้ไขยา (ห้ามซ้ำกลุ่ม/ห้ามยาตีกัน) + **วันนัดครั้งต่อไป (มีที่เดียว)** + บันทึกลง Supabase
 
 ---
 
@@ -104,284 +82,180 @@ HyperSense เป็นเว็บแอปพลิเคชันสำหร
 ```
 HyperSense/
 ├── src/
-│   ├── app/
-│   │   ├── page.tsx                 ← Main controller (step routing 1–6)
-│   │   ├── layout.tsx
-│   │   └── globals.css              ← CSS variables (colors, spacing)
+│   ├── app/page.tsx                 ← Controller: ล็อกอิน + routing ตามบทบาท
 │   ├── components/
-│   │   ├── Header.tsx               ← Logo + user info + logout
-│   │   ├── Header.module.css
-│   │   ├── LoginPage.tsx            ← Login form (role selection)
-│   │   ├── Login.module.css
-│   │   ├── StepIndicator.tsx        ← Progress bar 5 steps
-│   │   ├── StepIndicator.module.css
-│   │   ├── PatientSearchPage.tsx    ← Step 1
-│   │   ├── PatientDetailPage.tsx    ← Step 2 (BP + Lab entry by role)
-│   │   ├── BPTrendPage.tsx          ← Step 3 (SVG chart + regression)
-│   │   ├── RiskMedicationPage.tsx   ← Step 4 (ML + risk + medication)
-│   │   ├── SummaryPage.tsx          ← Step 5 (edit + save)
-│   │   └── HyperSense.module.css   ← Shared component styles
+│   │   ├── LoginPage.tsx            ← เข้าสู่ระบบด้วย Staff ID
+│   │   ├── StepIndicator.tsx        ← progress bar (ปรับตามบทบาท)
+│   │   ├── PatientSearchPage.tsx    ← ค้นหาผู้ป่วย (Supabase เท่านั้น)
+│   │   ├── PatientDetailPage.tsx    ← ข้อมูล + ประวัติ + กรอกค่าตามบทบาท (BP/Lab แก้ไขได้)
+│   │   ├── BPTrendPage.tsx          ← กราฟแนวโน้มความดัน
+│   │   ├── RiskMedicationPage.tsx   ← วิเคราะห์ความเสี่ยง + แนะนำยา
+│   │   └── SummaryPage.tsx          ← แพทย์: แก้ยา + นัดหมาย + บันทึก
 │   └── lib/
-│       ├── supabase.ts              ← Supabase browser client
-│       ├── supabaseData.ts          ← Supabase CRUD (patients, visits, records)
-│       ├── types.ts                 ← TypeScript interfaces
-│       ├── mockData.ts              ← Demo patients (fallback)
-│       ├── riskEngine.ts            ← Weighted Risk Score Calculator
-│       ├── medicationEngine.ts      ← Medication recommendation engine
-│       └── mlEngine.ts             ← ML API client + rule-based fallback
-├── ml/
-│   ├── api.py                       ← FastAPI server (POST /predict)
-│   ├── train.py                     ← XGBoost training + SMOTE
-│   ├── predict.py                   ← SHAP explainability
-│   ├── feature_engineering.py       ← Feature builder (~80 features)
-│   ├── requirements.txt
-│   └── models/                      ← สร้างอัตโนมัติเมื่อ train
-│       ├── model_hf.joblib
-│       ├── model_stroke.joblib
-│       ├── model_cad.joblib
-│       ├── model_ckd.joblib
-│       └── model_atrial_fibrillation.joblib
-├── public/
-│   └── logo_hypersense.png                     ← โลโก้ HyperSense
-├── supabase/
-│   └── schema.sql
-├── HYPERSENSE.md                    ← เอกสารระบบ (ไฟล์นี้)
-└── README.md
+│       ├── supabase.ts              ← Supabase client
+│       ├── supabaseData.ts          ← CRUD (fetch/saveVisit/saveLab/saveDoctorRecord)
+│       ├── types.ts                 ← TypeScript types (ตรงกับ data dictionary)
+│       ├── medicationGuide.ts       ← ฐานความรู้ยา 7 กลุ่ม + interactions + ผู้ป่วยพิเศษ
+│       ├── riskEngine.ts            ← คำนวณระดับความเสี่ยง (rule-based)
+│       ├── medicationEngine.ts      ← แนวทางปรับยา (CONTINUE/INTENSIFY/...)
+│       └── mlEngine.ts             ← เรียก FastAPI /predict + fallback
+├── ml/                              ← Python ML backend (FastAPI + XGBoost)
+│   ├── api.py · predict.py · train.py · feature_engineering.py
+│   ├── Dockerfile · render.yaml     ← พร้อม deploy
+│   └── models/                      ← โมเดลที่เทรนแล้ว (สร้างเมื่อรัน train.py)
+├── database/
+│   └── reset_and_seed.sql           ← ★ ไฟล์เดียวจบ: ลบเก่า + สร้างตาราง + ใส่ข้อมูล
+├── HYPERSENSE.md · README.md · SOLUTION.md
 ```
+> หมายเหตุ: ไม่มี `mockData.ts` แล้ว — ระบบใช้ข้อมูลจาก **Supabase เท่านั้น**
 
 ---
 
-## 5. Risk Engine
+## 5. ตัวแปร / Data Model
 
-**ไฟล์:** `src/lib/riskEngine.ts`
+ตัวแปรตั้งชื่อให้ตรงกับ **data dictionary** ของชุดข้อมูลความดันโลหิตสูง
 
-ใช้ Weighted Feature Scoring คำนวณ:
+### สัญญาณชีพ (vitalsign_*)
+`sbp · dbp · heartRate(hr) · weight(wt) · bmi · resp · o2sat · temp`
 
-| Output | คำอธิบาย |
+### ผลแลป (lab_*)
+| กลุ่ม | ตัวแปร |
 |---|---|
-| avgSBP / avgDBP | ค่าเฉลี่ยความดัน |
-| bpVariability | ความผันผวน SBP |
-| bpTrend | Increasing / Decreasing / Stable |
-| strokeRisk % | ความเสี่ยง Stroke 5-year |
-| maceRisk % | Major Adverse CV Events |
-| progressionRisk % | Hypertension worsening |
-| riskLevel | Low / Moderate / High / Critical |
-| riskFactors[] | ปัจจัยพร้อม weight (ranked) |
+| น้ำตาล/เบาหวาน | fpg, hba1c |
+| ไขมัน | ldl, hdl, tg, chol |
+| ไต/ปัสสาวะ | creatinine, egfr, uacr, upcr, proteinUrine24 |
+| เกลือแร่/เมตาบอลิก | potassium, sodium, calcium, co2, cl, po4, uric |
+| CBC | hemoglobin, hematocrit, wbc, platelet |
+| ไทรอยด์ | t3, t4 |
+| หัวใจขั้นสูง | troponin, proBNP |
 
-### Risk Level Thresholds
+### โรคร่วม (co_*)
+`diabetes(dm) · ckd · cad · heartFailure(hf) · stroke · pad · plaque · af · arrhythmias · dementia · dyslipidemia`
+> กลุ่ม **ASCVD** = cad + stroke + pad + plaque
 
-| Score | Level |
+### ยา (med_*)
+`Diuretic · ACEI · ARB · CCB · Beta-blocker · Alpha-blocker · Alpha2-Agonist · ARNI · Alpha-Beta-blocker · Direct-Vasodilator`
+
+### ประวัติซักถาม (PatientProfile)
+`htDurationYears · dmType · dmDiagnosisYear · dmDurationYears · ckdDurationYears · heightCm · waistCm · centralObesity · smokingStatus · smokingYears · alcohol · pregnant · recentSurgery · importantNotes`
+
+---
+
+## 6. ยาความดัน 7 กลุ่ม
+
+ฐานข้อมูลอยู่ใน `src/lib/medicationGuide.ts` แต่ละกลุ่มมี: ชื่อยา · ผลข้างเคียง · ยาที่ห้าม/ควรระวังเมื่อใช้ร่วม · ยาที่ใช้ร่วมเสริมฤทธิ์ · ข้อห้ามตั้งครรภ์
+
+| กลุ่ม | ตัวอย่างยา | ผลข้างเคียงเด่น | ห้าม/ระวังใช้ร่วม |
+|---|---|---|---|
+| **Diuretic** | HCTZ, Furosemide, Spironolactone | ปัสสาวะบ่อย, K ผิดปกติ, กรดยูริกสูง | NSAIDs, Lithium |
+| **ACEI** | Enalapril, Ramipril, Lisinopril | ไอแห้ง, K สูง, angioedema | **ARB, ARNI** (ห้าม), Spironolactone |
+| **ARB** | Losartan, Valsartan, Candesartan | เวียนหัว, K สูง (ไม่ไอ) | **ACEI, ARNI** (ห้าม), NSAIDs |
+| **CCB** | Amlodipine, Diltiazem, Verapamil | ขาบวม, หน้าแดง, ท้องผูก | Non-DHP + Beta-blocker (หัวใจช้า) |
+| **Beta-blocker** | Atenolol, Bisoprolol, Metoprolol | หัวใจช้า, อ่อนเพลีย, บดบังน้ำตาลต่ำ | Verapamil, ผู้ป่วยหอบหืด |
+| **Alpha-blocker** | Prazosin, Doxazosin | หน้ามืดเปลี่ยนท่า (มื้อแรก) | PDE5 (Sildenafil) → ช็อก |
+| **Alpha2-Agonist** (ออกฤทธิ์ส่วนกลาง) | Methyldopa, Clonidine | ง่วง, ปากแห้ง, rebound เมื่อหยุดยา | หยุดยากะทันหัน |
+
+**กลุ่มเสริม:** ARNI (Sacubitril/Valsartan), Alpha-Beta-blocker (Carvedilol, Labetalol), Direct-Vasodilator (Hydralazine, Minoxidil)
+
+### กลุ่มย่อย (subgroups) + การใช้ร่วม (ตามตารางอ้างอิง)
+- **Diuretic:** Thiazide · Loop · K-sparing · Aldosterone antagonist (Spironolactone ระวัง K สูงเมื่อใช้ร่วม ACEI/ARB)
+- **CCB:** Dihydropyridine (ใช้ร่วม Alpha-1 blocker ได้) · Non-Dihydropyridine (ห้ามร่วม Beta-blocker)
+- **Beta-blocker:** Cardioselective · Non-Selective · Mixed Alpha/Beta (Carvedilol, Labetalol)
+- ข้อมูลแต่ละกลุ่มแสดง **"ใช้ร่วมได้ (เสริมฤทธิ์)"** และ **"ใช้ร่วมไม่ได้/ระวัง"** ในหน้าสรุปของแพทย์
+
+### ระบบเตือนอัตโนมัติ
+- **ห้ามเลือกยาซ้ำกลุ่มเดิม** และ **ยาที่ห้ามใช้ร่วม (avoid)** จะเลือกไม่ได้ใน dropdown
+- เตือนคู่ยาที่ตีกัน (เช่น ACEI+ARB, Non-DHP CCB + Beta-blocker, Clonidine + Beta-blocker)
+- **ผู้ป่วยพิเศษ:** ตั้งครรภ์ (ห้าม ACEI/ARB/ARNI → แนะ Methyldopa/Labetalol/Nifedipine/Hydralazine), สูบบุหรี่, ดื่มเหล้า, ผ่าตัด, เกาต์
+
+### แนวทางคำแนะนำ (Recommendation)
+`NOTHING` (ผู้ป่วยปกติ — ยังไม่ต้องใช้ยา เน้นปรับพฤติกรรม) · `CONTINUE` (คงยาเดิม / "ดีขึ้น" เมื่อแนวโน้มลดลง) · `INTENSIFY` · `REDUCE` · `MONITOR` · `URGENT_REVIEW`
+
+---
+
+## 7. การวิเคราะห์ความเสี่ยง
+
+**ไฟล์:** `src/lib/riskEngine.ts` (rule-based, โปร่งใส)
+
+คำนวณจาก: SBP เฉลี่ย, ความผันผวน (variability), แนวโน้ม, อายุ, โรคร่วม, ผลแลป → ได้
+`riskLevel (Low/Moderate/High/Critical)` + `strokeRisk% / maceRisk% / progressionRisk%` + ปัจจัยเสี่ยงเรียงตามน้ำหนัก
+
+| Score | ระดับ |
 |---|---|
-| 0–19 | Low |
-| 20–39 | Moderate |
-| 40–64 | High |
-| 65+ | Critical |
+| 0–19 | Low | 20–39 | Moderate | 40–64 | High | 65+ | Critical |
+
+> ระบบใช้คำว่า **"การวิเคราะห์เชิงคลินิก"** (ไม่ใช่ "AI") — ทุกผลลัพธ์มีเหตุผลกำกับ ตรวจสอบได้
 
 ---
 
-## 6. Medication Decision Engine
+## 8. ML Backend
 
-**ไฟล์:** `src/lib/medicationEngine.ts`
+**ไฟล์:** `ml/` (FastAPI) · client: `src/lib/mlEngine.ts`
 
-ประเมิน Recommendation Type ตามลำดับ Priority:
+- เว็บเรียก `POST {NEXT_PUBLIC_ML_API_URL}/predict` — ส่งประวัติ visit/lab/comorbidity/med
+- **โหมด XGBoost:** เมื่อมีโมเดลที่เทรนแล้ว (`ml/models/*.joblib`) → ทำนาย HF/Stroke/CAD/CKD/AF + อธิบายด้วย **SHAP**
+- **โหมดเกณฑ์คลินิก (clinical):** เมื่อยังไม่มีโมเดล → `predict.py` ใช้กฎคลินิกตอบผลได้ทันที (response มี `basis` + `model:"clinical"`) จึง **เชื่อมต่อและทำงานได้เสมอ**
+- ถ้าเรียก API ไม่ได้เลย → เว็บใช้ rule-based fallback ฝั่ง client
 
-```
-Priority 1: REDUCE          (hypotension SBP<100 / bradycardia HR<55)
-Priority 2: URGENT_REVIEW   (Critical risk / SBP≥180 / HF+High BP)
-Priority 3: INTENSIFY       (SBP > target + High/Critical risk)
-Priority 4: CONTINUE        (SBP ≤ target+5, non-High risk)
-Priority 5: MONITOR         (borderline BP)
-```
-
-### Drug Conflict Map
-
-| คู่ยา | เหตุผล |
-|---|---|
-| ACEI + ARB | Dual RAS blockade — ไตวาย, hyperkalemia |
-| ACEI + ARNI | ต้องหยุด ACEI ≥36 ชม. ก่อนเริ่ม ARNI |
-| CCB-NonDHP + Beta-blocker | Bradycardia / Heart block |
+Response แต่ละ risk: `{ condition, probability, severity, shap_top5[], basis[], model }`
 
 ---
 
-## 7. ML Engine (XGBoost + SHAP)
+## 9. ฐานข้อมูลและ SQL
 
-**ไฟล์:** `src/lib/mlEngine.ts` (client) | `ml/` (server)
+**ไฟล์เดียวจบ:** [`database/reset_and_seed.sql`](database/reset_and_seed.sql)
+รันใน Supabase SQL Editor ครั้งเดียว → **ลบตาราง/ข้อมูลเก่า → สร้างตารางใหม่ → ใส่ข้อมูลตัวอย่าง**
 
-### โหมด API
-- เรียก `POST /predict` ที่ FastAPI (`NEXT_PUBLIC_ML_API_URL`)
-- Models: XGBoost ต่อ target (HF, Stroke, CAD, CKD, AF)
-- Validation: 5-fold Stratified CV + SMOTE + Platt Scaling
-- Explainability: SHAP TreeExplainer (top 5 features)
+ตาราง: `staff · patients · patient_history · patient_comorbidities · patient_medications · bp_visits · patient_labs · doctor_records`
 
-### โหมด Rule-based Fallback
-- ทำงานอัตโนมัติเมื่อไม่มี ML API
-- ใช้เงื่อนไข clinical rule สำหรับแต่ละ condition
-
-### ML Performance (ตัวอย่าง)
-```
-hf                  AUROC=0.821  AUPRC=0.643
-stroke              AUROC=0.784  AUPRC=0.512
-cad                 AUROC=0.798  AUPRC=0.601
-ckd                 AUROC=0.856  AUPRC=0.712
-atrial_fibrillation AUROC=0.773  AUPRC=0.489
-```
+จุดสำคัญ:
+- `bp_visits` และ `patient_labs` มี `UNIQUE(patient_id, <date>)` → รองรับ **upsert** (แก้ค่าของวันเดิมได้)
+- ไม่มีคอลัมน์ treating_doctor และไม่มีตาราง ai_predictions แล้ว
+- ข้อมูลตัวอย่าง 9 คน (รวมเคสตั้งครรภ์ 10009 เพื่อสาธิตการเตือนยา)
 
 ---
 
-## 8. ยา 7 กลุ่มหลัก
+## 10. การติดตั้งและรัน
 
-| กลุ่ม | ชื่อยาในระบบ | Indication หลัก |
-|---|---|---|
-| ACEI | Enalapril, Captopril, Lisinopril, Ramipril, Perindopril | ความดันสูง / ไตจากเบาหวาน / HF |
-| ARB | Losartan, Valsartan, Irbesartan, Candesartan, Telmisartan, Olmesartan | แทน ACEI กรณีไอแห้ง / HF / CKD |
-| CCB-DHP | Amlodipine, Nifedipine, Felodipine, Lercanidipine | ลดความดัน / ขยายหลอดเลือด |
-| CCB-NonDHP | Verapamil, Diltiazem | ลดความดัน + ลด HR / AF |
-| Beta-blocker | Atenolol, Metoprolol, Bisoprolol, Carvedilol, Propranolol, Nebivolol | HF / หัวใจเต้นเร็ว / หลัง MI |
-| Diuretic-Thiazide | Hydrochlorothiazide (HCTZ), Chlorthalidone, Indapamide | First-line / ความดันสูงทั่วไป |
-| Diuretic-Loop | Furosemide, Bumetanide, Torasemide | บวมน้ำ / HF / CKD stage 3+ |
-
----
-
-## 9. ผลตรวจทางห้องปฏิบัติการ
-
-สำหรับบทบาทเทคนิคการแพทย์ — บันทึกได้ใน Step 2:
-
-| กลุ่ม | รายการ | ค่าปกติ (อ้างอิง) |
-|---|---|---|
-| น้ำตาลและเบาหวาน | FPG (mg/dL), HbA1c (%) | FPG <126, HbA1c <7% |
-| ผลตรวจปัสสาวะและไต | uACR (mg/g), Creatinine (mg/dL), eGFR | uACR <30, Cr <1.3, eGFR ≥60 |
-| ไขมันในเลือด | LDL, HDL, Triglyceride, Total Cholesterol | LDL <130, HDL >40, TG <150 |
-| เกลือแร่ | Potassium K⁺ (mEq/L), Sodium Na⁺ (mEq/L) | K 3.5–5.0, Na 135–145 |
-| ความสมบูรณ์ของเลือด (CBC) | Hemoglobin (g/dL), WBC (×10³/µL) | Hb >12, WBC 4–10 |
-| ค่าหัวใจขั้นสูง | Troponin (ng/mL), NT-proBNP (pg/mL) | Troponin <0.04, BNP <125 |
-
----
-
-## 10. Database Schema
-
-```sql
--- ผู้ป่วย
-CREATE TABLE patients (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_code TEXT UNIQUE NOT NULL,
-  national_id  TEXT UNIQUE NOT NULL,
-  full_name    TEXT NOT NULL,
-  age          INTEGER,
-  sex          TEXT CHECK (sex IN ('ชาย','หญิง')),
-  bp_target    INTEGER DEFAULT 130,
-  created_at   TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ค่าความดันโลหิต
-CREATE TABLE bp_visits (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id  UUID REFERENCES patients(id),
-  visit_date  DATE NOT NULL,
-  sbp         INTEGER NOT NULL,
-  dbp         INTEGER NOT NULL,
-  heart_rate  INTEGER,
-  weight_kg   NUMERIC(5,1),
-  bmi         NUMERIC(4,1),
-  recorded_by TEXT,
-  created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ผลตรวจแลป
-CREATE TABLE labs (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id  UUID REFERENCES patients(id),
-  lab_date    DATE NOT NULL,
-  hba1c       NUMERIC(4,1),
-  fpg         NUMERIC(5,1),
-  ldl         NUMERIC(5,1),
-  hdl         NUMERIC(5,1),
-  tg          NUMERIC(5,1),
-  chol        NUMERIC(5,1),
-  creatinine  NUMERIC(4,2),
-  egfr        NUMERIC(5,1),
-  potassium   NUMERIC(4,2),
-  sodium      NUMERIC(5,1),
-  uacr        NUMERIC(6,1),
-  hemoglobin  NUMERIC(4,1),
-  wbc         NUMERIC(5,2),
-  troponin    NUMERIC(6,3),
-  pro_bnp     NUMERIC(8,1)
-);
-
--- บันทึกการรักษาของแพทย์
-CREATE TABLE doctor_records (
-  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id     UUID REFERENCES patients(id),
-  doctor_id      TEXT,
-  clinical_notes TEXT,
-  next_appt_date DATE,
-  appt_note      TEXT,
-  medications    JSONB,
-  ref_id         TEXT UNIQUE,
-  created_at     TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
----
-
-## 11. การติดตั้งและรัน
-
-### Frontend (Next.js)
+### Frontend
 ```bash
 npm install
-npm run dev
-# http://localhost:3000
+npm run dev          # http://localhost:3000
 ```
 
-### ML Backend (FastAPI) — optional
+### ML Backend (FastAPI)
 ```bash
 cd ml
 pip install -r requirements.txt
-python train.py --data "path/to/data.xlsx"
-uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload   # ใช้เกณฑ์คลินิกได้ทันที
+# (ออปชัน) python train.py --data "path/to/data.xlsx"  # เทรน XGBoost จริง
 ```
 
-### Environment Variables
+### Environment (.env.local)
 ```env
-# .env.local
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-NEXT_PUBLIC_ML_API_URL=http://localhost:8000   # optional
+NEXT_PUBLIC_ML_API_URL=http://localhost:8000   # ออปชัน
 ```
+
+### ขั้นตอนเริ่มใช้
+1. รัน `database/reset_and_seed.sql` ใน Supabase SQL Editor
+2. ตั้งค่า `.env.local`
+3. `npm run dev` → ล็อกอินด้วย DR001 / NR001 / MT001 (รหัส 1234)
 
 ---
 
-## 12. การเชื่อมต่อ Supabase
-
-1. สร้าง Tables ด้วย SQL ใน Section 10
-2. ตั้งค่า `.env.local` ด้วย URL และ Anon Key
-3. ระบบตรวจสอบ `NEXT_PUBLIC_SUPABASE_URL` อัตโนมัติ — ถ้าไม่มีจะใช้ Mock Data
-
----
-
-## 13. ข้อจำกัดและคำเตือน
+## 11. ข้อจำกัด
 
 ```
-⚠️  ระบบนี้เป็น PROTOTYPE เพื่อการศึกษาและพัฒนาเท่านั้น
-
-⚕️  ห้ามนำไปใช้ในการดูแลผู้ป่วยจริงโดยไม่ผ่านการ Validate
-    ทางคลินิกและได้รับการอนุมัติจากคณะกรรมการที่เกี่ยวข้อง
-
-🤖  Risk Score และ Medication Recommendation เป็นเพียง
-    ข้อมูลประกอบการตัดสินใจ — การตัดสินใจขั้นสุดท้าย
-    เป็นความรับผิดชอบของแพทย์ผู้ดูแลเสมอ
-
-🔒  ข้อมูลผู้ป่วยเป็นข้อมูลส่วนบุคคลที่ต้องได้รับการคุ้มครอง
-    ตาม PDPA และนโยบายของสถาบัน
+ระบบนี้เป็น PROTOTYPE เพื่อการศึกษาและพัฒนาเท่านั้น
+ห้ามนำไปใช้ดูแลผู้ป่วยจริงโดยไม่ผ่านการ validate ทางคลินิกและการอนุมัติที่เกี่ยวข้อง
+ผลการวิเคราะห์และคำแนะนำยาเป็นเพียงข้อมูลประกอบการตัดสินใจ — การตัดสินใจขั้นสุดท้ายเป็นของแพทย์เสมอ
+ข้อมูลผู้ป่วยต้องได้รับการคุ้มครองตาม PDPA และนโยบายของสถาบัน
 ```
 
 | รายการ | ข้อมูล |
 |---|---|
-| Version | 1.0.0-prototype |
-| Stack | Next.js 15 · TypeScript · Supabase |
-| Charts | Inline SVG (ไม่ใช้ external library) |
-| ML | XGBoost + SHAP (FastAPI) / Rule-based fallback |
-
----
-
-*HyperSense — Empowering Physicians, Not Replacing Them*
+| Version | 2.0.0-prototype |
+| Stack | Next.js 16 · TypeScript · Supabase · FastAPI + XGBoost |
+| ข้อมูล | Supabase เท่านั้น (ไม่มี mock) |

@@ -63,9 +63,12 @@ export function calculateRisk(patient: CardioPatient): RiskResult {
   if (comorbidities.stroke) addFactor('ประวัติโรคหลอดเลือดสมอง (Stroke)', 20)
   if (comorbidities.cad) addFactor('โรคหลอดเลือดหัวใจ (CAD)', 18)
   if (comorbidities.heartFailure) addFactor('ภาวะหัวใจล้มเหลว (Heart Failure)', 15)
+  if (comorbidities.pad) addFactor('หลอดเลือดส่วนปลายตีบ (PAD)', 12)
   if (comorbidities.diabetes) addFactor('โรคเบาหวาน (Diabetes)', 12)
   if (comorbidities.ckd) addFactor('โรคไตเรื้อรัง (CKD)', 12)
   if (comorbidities.af) addFactor('ภาวะหัวใจเต้นผิดจังหวะ (AF)', 10)
+  if (comorbidities.plaque) addFactor('พบ Plaque หลอดเลือด (ASCVD)', 8)
+  if (comorbidities.dyslipidemia) addFactor('ไขมันในเลือดผิดปกติ', 5)
 
   // Labs
   if (labs.egfr && labs.egfr < 45) addFactor(`eGFR ต่ำมาก (${labs.egfr} mL/min)`, 12)

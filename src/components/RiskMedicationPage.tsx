@@ -26,7 +26,7 @@ function MLPanel({ patient }: { patient: CardioPatient }) {
   if (loading) return (
     <div style={{ background: 'rgba(59,130,246,.03)', border: '1.5px solid rgba(59,130,246,.15)', borderRadius: 'var(--r)', padding: '16px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text3)', fontSize: 13 }}>
       <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid #3b82f6', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-      กำลังวิเคราะห์ความเสี่ยงจาก ML...
+      กำลังประมวลผลการวิเคราะห์เชิงคลินิก...
     </div>
   )
 
@@ -36,9 +36,9 @@ function MLPanel({ patient }: { patient: CardioPatient }) {
     <div style={{ background: 'rgba(59,130,246,.03)', border: '1.5px solid rgba(59,130,246,.2)', borderRadius: 'var(--r)', padding: '16px 18px', marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: source === 'api' ? '#00a872' : '#3b82f6', flexShrink: 0 }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#3b82f6', fontFamily: 'var(--mono)', letterSpacing: '.06em' }}>ML RISK ANALYSIS</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#3b82f6', fontFamily: 'var(--mono)', letterSpacing: '.06em' }}>การวิเคราะห์ความเสี่ยงเชิงคลินิก</span>
         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: source === 'api' ? 'rgba(0,168,114,.1)' : 'rgba(107,114,128,.1)', color: source === 'api' ? '#00a872' : '#6b7280', border: `1px solid ${source === 'api' ? 'rgba(0,168,114,.3)' : 'rgba(107,114,128,.2)'}`, fontFamily: 'var(--mono)', fontWeight: 600 }}>
-          {source === 'api' ? 'XGBoost + SHAP' : 'Rule-based'}
+          {source === 'api' ? 'XGBoost + SHAP' : 'เกณฑ์คลินิก'}
         </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -60,7 +60,7 @@ function MLPanel({ patient }: { patient: CardioPatient }) {
         ))}
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-        {source === 'api' ? 'XGBoost trained บน dataset จริง · SHAP explainability' : 'Rule-based fallback — รัน python train.py เพื่อใช้ XGBoost จริง'}
+        {source === 'api' ? 'ประมวลผลโดยโมเดล XGBoost + อธิบายผลด้วย SHAP' : 'ประเมินด้วยเกณฑ์ทางคลินิก (เชื่อมต่อโมเดล XGBoost เพื่อผลแม่นยำขึ้น)'}
       </div>
     </div>
   )
@@ -76,6 +76,7 @@ const LEVEL_TH: Record<string, string> = {
 }
 
 const REC_CFG = {
+  NOTHING:      { banner: styles.recBannerNothing, type: styles.recTypeNothing, label: 'แนวทางดูแล' },
   CONTINUE:     { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
   INTENSIFY:    { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
   REDUCE:       { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
@@ -153,7 +154,7 @@ export default function RiskMedicationPage({
       </div>
 
       {/* ── ML Risk Analysis ─────────────────────────────── */}
-      <div className={styles.lbl} style={{ marginBottom: 10 }}>การวิเคราะห์ความเสี่ยงจาก ML (ข้อมูลในอดีต)</div>
+      <div className={styles.lbl} style={{ marginBottom: 10 }}>การวิเคราะห์ความเสี่ยงเชิงคลินิก (จากข้อมูลย้อนหลัง)</div>
       <MLPanel patient={patient} />
 
       <div className={styles.divider} />
@@ -190,9 +191,12 @@ export default function RiskMedicationPage({
         background: 'var(--bg3)', border: '1px solid var(--border2)',
         borderRadius: 'var(--rs)', fontSize: 13, color: 'var(--text)', lineHeight: 1.8,
       }}>
-        <div className={styles.lbl} style={{ marginBottom: 8 }}>แนวทางการปรับยา</div>
+        <div className={styles.lbl} style={{ marginBottom: 8 }}>แนวทางการดูแล</div>
+        {(recommendation.type === 'NOTHING') && (
+          <div><strong>ผู้ป่วยปกติ — ยังไม่จำเป็นต้องใช้ยา</strong> ความดันอยู่ในเกณฑ์เป้าหมายและความเสี่ยงต่ำ เน้นปรับพฤติกรรม (ลดเค็ม ออกกำลังกาย งดบุหรี่/แอลกอฮอล์ คุมน้ำหนัก) และติดตามความดันเป็นระยะ</div>
+        )}
         {(recommendation.type === 'CONTINUE') && (
-          <div><strong>ใช้ยาตามเดิม</strong> — ยาที่ใช้อยู่ปัจจุบันได้ผลดี ไม่จำเป็นต้องปรับขนาดหรือเปลี่ยนชนิดยา</div>
+          <div><strong>{recommendation.title.includes('ดีขึ้น') ? 'อาการดีขึ้น — ใช้ยาตามเดิม' : 'ใช้ยาตามเดิม'}</strong> — ยาที่ใช้อยู่ปัจจุบันได้ผลดี ไม่จำเป็นต้องปรับขนาดหรือเปลี่ยนชนิดยา ควรติดตามต่อเนื่องและคงพฤติกรรมสุขภาพที่ดีไว้</div>
         )}
         {(recommendation.type === 'INTENSIFY' || recommendation.type === 'URGENT_REVIEW') && (
           <div><strong>แนะนำเพิ่มขนาดยา หรือเพิ่มกลุ่มยาใหม่</strong> — ความดันยังสูงกว่าเป้าหมาย ควรพิจารณาเพิ่มโดสยาเดิม หรือเพิ่มยากลุ่มใหม่เข้าในสูตรการรักษา</div>

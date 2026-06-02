@@ -39,6 +39,35 @@ export function getMedicationRecommendation(
     }
   }
 
+  // ── NOTHING: ผู้ป่วยปกติ ยังไม่จำเป็นต้องใช้ยา ───────────────────────────
+  const noMeds   = patient.medications.length === 0
+  const normalBP = avgSBP <= bpTarget && lastSBP <= bpTarget + 5 && avgSBP >= 90
+  const hasMajorComorbidity = comorbidities.diabetes || comorbidities.ckd ||
+    comorbidities.cad || comorbidities.heartFailure || comorbidities.stroke ||
+    comorbidities.pad || comorbidities.af
+  if (noMeds && normalBP && riskLevel === 'Low' && !hasMajorComorbidity) {
+    reasons.push(`ความดันอยู่ในเกณฑ์ปกติ (SBP เฉลี่ย ${avgSBP} mmHg ≤ เป้าหมาย ${bpTarget} mmHg)`)
+    if (bpTrend === 'Decreasing') reasons.push('แนวโน้มความดันลดลง เป็นสัญญาณที่ดี')
+    else if (bpTrend === 'Stable') reasons.push('ความดันคงที่ในเกณฑ์ดี')
+    reasons.push('ยังไม่พบโรคร่วมที่มีความเสี่ยงสูง')
+    return {
+      type: 'NOTHING',
+      title: 'ผู้ป่วยปกติ — ยังไม่จำเป็นต้องใช้ยา',
+      thai: 'ปกติ / ดูแลสุขภาพต่อเนื่อง',
+      reasons,
+      safetyWarnings: [
+        'เน้นปรับพฤติกรรม: ลดเค็ม (โซเดียม < 2 g/วัน), ออกกำลังกาย 150 นาที/สัปดาห์',
+        'งดบุหรี่ จำกัดแอลกอฮอล์ และควบคุมน้ำหนัก',
+        'วัดความดันที่บ้านสม่ำเสมอ และติดตามตามนัด',
+      ],
+      featureImportance: [
+        { factor: `SBP เฉลี่ย ${avgSBP} mmHg`, impact: 88, direction: 'positive' },
+        { factor: `BP Trend ${bpTrend}`, impact: 70, direction: 'positive' },
+        { factor: `Risk Level ${riskLevel}`, impact: 66, direction: 'positive' },
+      ],
+    }
+  }
+
   // ── INTENSIFY ─────────────────────────────────────────────────────────
   const aboveTarget = avgSBP > bpTarget + 8
   const urgentBP = lastSBP >= 180 || lastDBP >= 110
@@ -100,10 +129,11 @@ export function getMedicationRecommendation(
     if (bpVariability <= 8) reasons.push(`BP Variability อยู่ในเกณฑ์ปกติ (${bpVariability} mmHg)`)
     reasons.push(`Risk Level: ${riskLevel} — ยังไม่จำเป็นต้องปรับยา`)
 
+    const improving = bpTrend === 'Decreasing'
     return {
       type: 'CONTINUE',
-      title: 'คงแผนยาเดิมและติดตามตามนัด',
-      thai: 'คงยาเดิม',
+      title: improving ? 'อาการดีขึ้น — คงแผนยาเดิมและติดตามตามนัด' : 'คงแผนยาเดิมและติดตามตามนัด',
+      thai: improving ? 'ดีขึ้น / คงยาเดิม' : 'คงยาเดิม',
       reasons,
       safetyWarnings: [],
       featureImportance: [
