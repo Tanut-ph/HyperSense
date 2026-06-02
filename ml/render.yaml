@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: hypersense-ml
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free          # free tier (512MB RAM, shared CPU)
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    # เพิ่ม env vars เพิ่มเติมได้ใน Render Dashboard

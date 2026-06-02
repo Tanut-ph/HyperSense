@@ -1,71 +1,68 @@
-# GenomeMed AI — Next.js + Supabase
+# HyperSenseProgram
 
-โปรเจกต์นี้ถูกแก้ให้ **ดึงข้อมูลผู้ป่วยจาก Supabase จริงเท่านั้น** และไม่มี `mockPatient` / fallback mock data แล้ว
+**ระบบช่วยตัดสินใจทางคลินิกสำหรับการจัดการความดันโลหิตสูงและความเสี่ยงโรคหัวใจและหลอดเลือด**
 
-## 1) ติดตั้ง dependencies
+> Stack: Next.js · TypeScript · Supabase
+
+---
+
+## รันโปรเจกต์
 
 ```bash
 npm install
-```
-
-## 2) ตั้งค่า Supabase env
-
-สร้างไฟล์ `.env.local` ที่ root project โดยดูตัวอย่างจาก `.env.example`
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_or_publishable_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
-```
-
-> หลังแก้ `.env.local` ต้อง restart dev server ทุกครั้ง
-
-## 3) สร้างตารางใน Supabase
-
-เปิด Supabase → SQL Editor → วาง SQL จากไฟล์นี้แล้วกด Run
-
-```text
-supabase/schema.sql
-```
-
-ตารางหลัก:
-
-- `patients` — ข้อมูลผู้ป่วยจริง/ข้อมูลทดสอบที่อยู่ใน Supabase
-- `patient_histories` — ประวัติการรักษาของผู้ป่วย
-- `visits` — การมารับบริการ/คัดกรอง
-- `ai_assessments` — ผลวิเคราะห์ AI
-- `genetic_profiles` — ข้อมูลพันธุกรรม/ไฟล์ DNA
-- `drug_recommendations` — คำแนะนำยา
-- `referrals` — การส่งต่อผู้ป่วย
-
-## 4) รันโปรเจกต์
-
-```bash
 npm run dev
 ```
 
-เปิดเว็บ:
+เปิดเบราว์เซอร์: `http://localhost:3000`
 
-```text
-http://localhost:3000
+## Demo Login
+
+| Username | Password | ชื่อ |
+|---|---|---|
+| doctor1 | 1234 | นพ. วิชาญ สุขใจ |
+| doctor2 | 1234 | พญ. สมหญิง รักษาดี |
+
+## โครงสร้างโปรเจกต์
+
+```
+src/
+├── app/                         ← Next.js App Router
+│   ├── page.tsx                 ← Main controller (step routing)
+│   ├── layout.tsx
+│   └── globals.css
+├── components/
+│   ├── Header.tsx               ← Header + logout
+│   └── hypersense/              ← หน้าทั้งหมดของระบบ
+│       ├── LoginPage.tsx        ← Step 1: Login
+│       ├── PatientSearchPage.tsx← Step 2: ค้นหาผู้ป่วย
+│       ├── PatientDetailPage.tsx← Step 3: ข้อมูลผู้ป่วย + บันทึก BP
+│       ├── BPTrendPage.tsx      ← Step 4: กราฟ BP Trend + ML
+│       ├── RiskMedicationPage.tsx← Step 5: ประเมินความเสี่ยง + แนะนำยา
+│       ├── SummaryPage.tsx      ← Step 6: สรุปและบันทึก
+│       ├── StepIndicator.tsx    ← Progress bar
+│       ├── HyperSense.module.css← Styles หลัก
+│       └── Login.module.css     ← Styles หน้า Login
+└── lib/
+    ├── supabase.ts              ← Supabase client
+    └── hypersense/              ← Logic & data layer
+        ├── types.ts             ← TypeScript interfaces
+        ├── mockData.ts          ← ข้อมูลทดสอบ (5 ผู้ป่วย)
+        ├── riskEngine.ts        ← คำนวณ Risk Score
+        ├── medicationEngine.ts  ← แนะนำแนวทางยา
+        └── supabaseData.ts      ← Supabase queries
 ```
 
-## 5) วิธีทดสอบการค้นหา
+## เชื่อมต่อ Supabase
 
-ถ้ารัน `supabase/schema.sql` ตามไฟล์นี้ จะมีข้อมูลตัวอย่างในฐานข้อมูล Supabase:
+สร้างไฟล์ `.env.local`:
 
-```text
-รหัสผู้ป่วย: PT-20240087
-เลขบัตรประชาชน: 3-1002-01234-56-7
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-ข้อมูลนี้ไม่ใช่ mock ในโค้ด แต่เป็น seed data ใน Supabase เพื่อใช้ทดสอบการ query
+ดู schema เพิ่มเติมที่ `supabase/schema.sql`
 
-## สิ่งที่แก้จากเวอร์ชันก่อน
+## เอกสารระบบ
 
-- ลบ `MOCK_PATIENT` ออกจาก `src/lib/patient.ts`
-- ลบปุ่ม “ข้อมูลตัวอย่าง” ออกจาก `SearchPage.tsx`
-- ถ้าไม่ได้ตั้งค่า Supabase จะขึ้น error ชัดเจน ไม่ fallback เป็น mock
-- `ConfirmPage.tsx` ใช้ชื่อผู้ป่วยจริงจากข้อมูลที่ค้นหาได้
-- `AnalysisPage.tsx` ใช้เปอร์เซ็นต์ risk จาก Supabase (`patients.risks`) แทนค่าคงที่ในโค้ด
-- เพิ่มคำอธิบายใน `src/lib/supabase.ts` และ `src/lib/patient.ts`
+ดูรายละเอียดเต็มที่ `HYPERSENSE.md`

@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'GenomeMed AI — ระบบวิเคราะห์ความเสี่ยงโรค',
-  description: 'AI-powered clinical decision support with genomic risk assessment',
+  title: 'HyperSenseProgram — ระบบช่วยตัดสินใจทางคลินิก ความดันโลหิตสูง',
+  description: 'ระบบ AI ช่วยวิเคราะห์ความเสี่ยงโรคหัวใจและหลอดเลือด แนะนำแนวทางการรักษาความดันโลหิตสูง',
 }
 
 export default function RootLayout({

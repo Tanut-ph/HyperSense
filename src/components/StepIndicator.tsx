@@ -1,25 +1,17 @@
-import { Step, Mode } from '@/app/page'
-import styles from './StepIndicator.module.css'
+﻿import styles from './StepIndicator.module.css'
 
-const ANALYZE_STEPS = ['ค้นหา', 'ข้อมูล', 'โหมด', 'DNA', 'วิเคราะห์', 'การรักษา', 'ส่งต่อ', 'ยืนยัน']
-const REFER_STEPS   = ['ค้นหา', 'ข้อมูล', 'โหมด', 'ส่งต่อ', 'ยืนยัน']
+const STEPS = ['ค้นหาผู้ป่วย', 'ข้อมูลผู้ป่วย', 'BP Trend', 'ความเสี่ยง + ยา', 'สรุปและบันทึก']
 
-function getStepIndex(step: Step, mode: Mode): number {
-  if (mode === 'refer') {
-    if (step <= 3) return step - 1
-    if (step === 4) return 3
-    return 4
-  }
-  return step - 1
-}
+export type CardioStep = 1 | 2 | 3 | 4 | 5 | 6 | 7
 
-export default function StepIndicator({ step, mode }: { step: Step; mode: Mode }) {
-  const labels = mode === 'refer' ? REFER_STEPS : ANALYZE_STEPS
-  const activeIdx = getStepIndex(step, mode)
+export default function CardioStepIndicator({ step }: { step: CardioStep }) {
+  const activeIdx = step - 2   // step 1 = login (hidden), step 2 = search (index 0)
+
+  if (step < 2) return null
 
   return (
     <div className={styles.steps}>
-      {labels.map((label, i) => (
+      {STEPS.map((label, i) => (
         <div key={i} className={[
           styles.stp,
           activeIdx === i ? styles.active : '',

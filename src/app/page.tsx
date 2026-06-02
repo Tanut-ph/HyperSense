@@ -1,88 +1,77 @@
 'use client'
-import { useState } from 'react'
-import StepIndicator from '@/components/StepIndicator'
-import Header from '@/components/Header'
-import LoginPage from '@/components/steps/LoginPage'
-import SearchPage from '@/components/steps/SearchPage'
-import PatientPage from '@/components/steps/PatientPage'
-import ModePage from '@/components/steps/ModePage'
-import DnaUploadPage from '@/components/steps/DnaUploadPage'
-import AnalysisPage from '@/components/steps/AnalysisPage'
-import TreatmentPage from '@/components/steps/TreatmentPage'
-import ReferPage from '@/components/steps/ReferPage'
-import ConfirmPage from '@/components/steps/ConfirmPage'
-import { findPatient, Patient } from '@/lib/patient'
 
-export type Mode = 'analyze' | 'refer' | null
-export type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+import { useState, useMemo } from 'react'
+import Header from '@/components/Header'
+import type { UserRole } from '@/lib/types'
+
+import LoginPage          from '@/components/LoginPage'
+import StepIndicator, { type CardioStep } from '@/components/StepIndicator'
+import PatientSearchPage  from '@/components/PatientSearchPage'
+import PatientDetailPage  from '@/components/PatientDetailPage'
+import BPTrendPage        from '@/components/BPTrendPage'
+import RiskMedicationPage from '@/components/RiskMedicationPage'
+import SummaryPage        from '@/components/SummaryPage'
+
+import { calculateRisk }               from '@/lib/riskEngine'
+import { getMedicationRecommendation } from '@/lib/medicationEngine'
+import type { CardioPatient, BPVisit, RiskResult, MedRecommendation } from '@/lib/types'
 
 export default function Home() {
-  const [loggedIn, setLoggedIn]   = useState(false)
-  const [doctorName, setDoctorName] = useState('')
-  const [step, setStep]           = useState<Step>(1)
-  const [mode, setMode]           = useState<Mode>(null)
-  const [patient, setPatient]     = useState<Patient | null>(null)
-  const [vcfDone, setVcfDone]     = useState(false)
-  const [confirmData, setConfirmData] = useState<Record<string, string>>({})
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchError, setSearchError]     = useState('')
+  const [loggedIn,    setLoggedIn]    = useState(false)
+  const [doctorName,  setDoctorName]  = useState('')
+  const [userRole,    setUserRole]    = useState<UserRole>('doctor')
+  const [step,        setStep]        = useState<CardioStep>(1)
 
-  const go = (s: Step) => {
+  const [basePatient, setBasePatient] = useState<CardioPatient | null>(null)
+  const [newBPVisit,  setNewBPVisit]  = useState<BPVisit | null>(null)
+  const [riskResult,  setRiskResult]  = useState<RiskResult | null>(null)
+  const [medRec,      setMedRec]      = useState<MedRecommendation | null>(null)
+
+  const effectivePatient = useMemo<CardioPatient | null>(() => {
+    if (!basePatient) return null
+    if (newBPVisit)   return { ...basePatient, visits: [...basePatient.visits, newBPVisit] }
+    return basePatient
+  }, [basePatient, newBPVisit])
+
+  const go = (s: CardioStep) => {
     setStep(s)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const handleLogin = (name: string) => {
+  const handleLogin = (name: string, role: UserRole) => {
     setDoctorName(name)
+    setUserRole(role)
     setLoggedIn(true)
-  }
-
-  const handleSearch = async (params: { patientCode?: string; nationalId?: string }) => {
-    setSearchLoading(true)
-    setSearchError('')
-    try {
-      const found = await findPatient(params)
-      setPatient(found)
-      go(2)
-    } catch (err) {
-      setSearchError(err instanceof Error ? err.message : 'ค้นหาผู้ป่วยไม่สำเร็จ')
-    } finally {
-      setSearchLoading(false)
-    }
-  }
-
-  // Accumulate analysis data then go to treatment page (step 6)
-  const handleAnalysisNext = (data: Record<string, string>) => {
-    setConfirmData(prev => ({ ...prev, ...data }))
-    go(6)
-  }
-
-  // After treatment, go to referral (step 7)
-  const handleTreatmentNext = () => {
-    go(7)
-  }
-
-  // Referral confirm for analyze mode → step 8 (confirm)
-  const handleAnalysisReferConfirm = (data: Record<string, string>) => {
-    setConfirmData(prev => ({ ...prev, ...data }))
-    go(8)
-  }
-
-  // Referral confirm for refer mode → step 5 (confirm)
-  const handleReferConfirm = (data: Record<string, string>) => {
-    setConfirmData(data)
-    go(5)
-  }
-
-  const reset = () => {
-    setStep(1); setMode(null); setPatient(null)
-    setVcfDone(false); setConfirmData({}); setSearchError('')
+    go(2)
   }
 
   const handleLogout = () => {
-    setLoggedIn(false)
-    setDoctorName('')
-    reset()
+    setLoggedIn(false); setDoctorName(''); setStep(1); setUserRole('doctor')
+    setBasePatient(null); setNewBPVisit(null)
+    setRiskResult(null); setMedRec(null)
+  }
+
+  const handlePatientFound = (p: CardioPatient) => {
+    setBasePatient(p); setNewBPVisit(null)
+    setRiskResult(null); setMedRec(null)
+    go(3)
+  }
+
+  const handlePatientNext = (newVisit: BPVisit | null) => {
+    setNewBPVisit(newVisit)
+    const patient = newVisit
+      ? { ...basePatient!, visits: [...basePatient!.visits, newVisit] }
+      : basePatient!
+    const risk = calculateRisk(patient)
+    const rec  = getMedicationRecommendation(patient, risk)
+    setRiskResult(risk); setMedRec(rec)
+    go(4)
+  }
+
+  const handleHome = () => {
+    setBasePatient(null); setNewBPVisit(null)
+    setRiskResult(null);  setMedRec(null)
+    go(2)
   }
 
   if (!loggedIn) {
@@ -95,59 +84,53 @@ export default function Home() {
   }
 
   return (
-    <main style={{ position: 'relative', zIndex: 1, maxWidth: 900, margin: '0 auto', padding: '20px 16px 80px' }}>
-      <Header doctorName={doctorName} onLogout={handleLogout} />
-      <StepIndicator step={step} mode={mode} />
+    <main style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '20px 16px 80px' }}>
+      <Header doctorName={doctorName} userRole={userRole} onLogout={handleLogout} />
+      <StepIndicator step={step} />
 
-      {/* Step 1: Search */}
-      {step === 1 && (
-        <SearchPage onSearch={handleSearch} loading={searchLoading} error={searchError} onBack={handleLogout} />
+      {step === 2 && (
+        <PatientSearchPage onFound={handlePatientFound} onBack={handleLogout} />
       )}
 
-      {/* Step 2: Patient Info */}
-      {step === 2 && patient && (
-        <PatientPage patient={patient} onBack={() => go(1)} onNext={() => go(3)} />
+      {step === 3 && basePatient && (
+        <PatientDetailPage
+          patient={basePatient}
+          doctorName={doctorName}
+          userRole={userRole}
+          onBack={() => go(2)}
+          onNext={handlePatientNext}
+        />
       )}
 
-      {/* Step 3: Mode select */}
-      {step === 3 && (
-        <ModePage mode={mode} onSelect={setMode} onBack={() => go(2)} onNext={() => go(4)} />
-      )}
-
-      {/* Step 4: DNA upload (analyze) or Referral form (refer) */}
-      {step === 4 && mode === 'analyze' && (
-        <DnaUploadPage
-          vcfDone={vcfDone}
-          onVcfDone={() => setVcfDone(true)}
+      {step === 4 && effectivePatient && riskResult && (
+        <BPTrendPage
+          patient={effectivePatient}
+          risk={riskResult}
           onBack={() => go(3)}
           onNext={() => go(5)}
         />
       )}
-      {step === 4 && mode === 'refer' && patient && (
-        <ReferPage patient={patient} onBack={() => go(3)} onConfirm={handleReferConfirm} />
+
+      {step === 5 && effectivePatient && riskResult && medRec && (
+        <RiskMedicationPage
+          patient={effectivePatient}
+          risk={riskResult}
+          recommendation={medRec}
+          onBack={() => go(4)}
+          onNext={() => go(6)}
+        />
       )}
 
-      {/* Step 5: Analysis (analyze) or Confirm (refer) */}
-      {step === 5 && mode === 'analyze' && patient && (
-        <AnalysisPage patient={patient} onBack={() => go(4)} onNext={handleAnalysisNext} />
-      )}
-      {step === 5 && mode === 'refer' && (
-        <ConfirmPage mode={mode} data={confirmData} onReset={reset} onBack={() => go(4)} />
-      )}
-
-      {/* Step 6: Treatment table (analyze only) */}
-      {step === 6 && mode === 'analyze' && patient && (
-        <TreatmentPage patient={patient} onBack={() => go(5)} onNext={handleTreatmentNext} />
-      )}
-
-      {/* Step 7: Referral after analysis (analyze only) */}
-      {step === 7 && mode === 'analyze' && patient && (
-        <ReferPage patient={patient} onBack={() => go(6)} onConfirm={handleAnalysisReferConfirm} />
-      )}
-
-      {/* Step 8: Confirm (analyze only) */}
-      {step === 8 && mode === 'analyze' && (
-        <ConfirmPage mode={mode} data={confirmData} onReset={reset} onBack={() => go(7)} />
+      {step === 6 && effectivePatient && riskResult && medRec && (
+        <SummaryPage
+          patient={effectivePatient}
+          risk={riskResult}
+          recommendation={medRec}
+          doctorName={doctorName}
+          userRole={userRole}
+          onBack={() => go(5)}
+          onHome={handleHome}
+        />
       )}
     </main>
   )

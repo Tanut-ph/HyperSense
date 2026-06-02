@@ -1,0 +1,545 @@
+/* ── Overview Dashboard ───────────────────── */
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.statCard {
+  background: var(--bg2);
+  border-radius: var(--r);
+  border: 1.5px solid var(--border);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: box-shadow 0.2s;
+}
+
+.statCard:hover {
+  box-shadow: 0 4px 16px rgba(0,160,114,.1);
+}
+
+.statIcon { font-size: 24px; margin-bottom: 2px; }
+.statValue { font-size: 28px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.statLabel { font-size: 12px; color: var(--text2); font-weight: 500; }
+.statSub { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+
+.statCardDanger { border-color: rgba(229,80,57,.25) !important; background: rgba(229,80,57,.03) !important; }
+.statCardDanger .statValue { color: #e55039; }
+.statCardWarn { border-color: rgba(230,126,34,.25) !important; background: rgba(230,126,34,.03) !important; }
+.statCardWarn .statValue { color: #e67e22; }
+.statCardGreen { border-color: rgba(0,184,148,.25) !important; }
+.statCardGreen .statValue { color: var(--accent); }
+
+/* ── Patient List ─────────────────────────── */
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.patientList { display: flex; flex-direction: column; gap: 8px; }
+
+.patientRow {
+  background: var(--bg2);
+  border-radius: var(--r);
+  border: 1.5px solid var(--border);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  transition: all .2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.patientRow::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: 4px 0 0 4px;
+}
+
+.patientRow:hover { transform: translateX(2px); box-shadow: 0 3px 12px rgba(0,160,114,.1); }
+
+.prLow::before { background: #00b894; }
+.prModerate::before { background: #f39c12; }
+.prHigh::before { background: #e67e22; }
+.prCritical::before { background: #e55039; }
+
+.prAvatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+
+.prName { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.prMeta { font-size: 12px; color: var(--text2); }
+.prId { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+
+.prRight { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+.prBP { text-align: right; }
+.prBPVal { font-size: 15px; font-weight: 700; font-family: var(--mono); color: var(--text); }
+.prBPLabel { font-size: 10px; color: var(--text3); }
+
+.arrow { font-size: 18px; color: var(--text3); }
+
+/* ── Risk Badges ──────────────────────────── */
+.riskBadge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700;
+  padding: 4px 12px; border-radius: 20px;
+  font-family: var(--mono); letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+.riskLow {
+  background: rgba(0,184,148,.12); color: #007d60;
+  border: 1.5px solid rgba(0,184,148,.3);
+}
+
+.riskModerate {
+  background: rgba(243,156,18,.12); color: #9a6700;
+  border: 1.5px solid rgba(243,156,18,.3);
+}
+
+.riskHigh {
+  background: rgba(230,126,34,.12); color: #a54500;
+  border: 1.5px solid rgba(230,126,34,.3);
+}
+
+.riskCritical {
+  background: rgba(229,80,57,.12); color: #c0392b;
+  border: 1.5px solid rgba(229,80,57,.3);
+}
+
+/* ── Risk Distribution Bar ────────────────── */
+.riskDist { display: flex; flex-direction: column; gap: 8px; }
+.rdRow { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text2); }
+.rdLabel { width: 80px; font-family: var(--mono); }
+.rdBarBg { flex: 1; height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; }
+.rdBarFill { height: 100%; border-radius: 4px; transition: width 1s; }
+.rdCount { width: 20px; text-align: right; font-weight: 700; color: var(--text); }
+.rdLow { background: #00b894; }
+.rdModerate { background: #f39c12; }
+.rdHigh { background: #e67e22; }
+.rdCritical { background: #e55039; }
+
+/* ── Patient Detail ───────────────────────── */
+.detailGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+
+.detailBox {
+  background: var(--bg3);
+  border-radius: var(--rs);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.detailLabel { font-size: 11px; color: var(--text3); font-family: var(--mono); margin-bottom: 4px; }
+.detailValue { font-size: 15px; font-weight: 600; color: var(--text); }
+.detailWarn { color: var(--warn) !important; }
+.detailDanger { color: var(--danger) !important; }
+
+.comorbRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.comorbTag {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-family: var(--mono);
+  background: rgba(229,80,57,.08);
+  color: #c0392b;
+  border: 1.5px solid rgba(229,80,57,.2);
+  font-weight: 500;
+}
+
+.comorbNone {
+  background: rgba(0,184,148,.08);
+  color: #007d60;
+  border-color: rgba(0,184,148,.2);
+}
+
+.medTable { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
+.medTable th {
+  padding: 8px 12px; text-align: left;
+  font-size: 10px; color: var(--text3);
+  font-weight: 600; font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: .06em;
+  border-bottom: 1.5px solid var(--border2);
+  background: var(--bg3);
+}
+.medTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px; color: var(--text);
+}
+.medTable tr:last-child td { border-bottom: none; }
+.medTable tr:hover td { background: var(--bg3); }
+
+.drugClassTag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: var(--mono);
+  font-weight: 700;
+  background: rgba(0,168,114,.1);
+  color: var(--accent);
+  border: 1px solid rgba(0,168,114,.2);
+}
+
+/* ── BP Trend Chart ───────────────────────── */
+.chartWrap {
+  background: var(--bg2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.chartTitle { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 14px; font-family: var(--mono); }
+
+.bpStatGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+
+.bpStat {
+  background: var(--bg3);
+  border-radius: var(--rs);
+  padding: 12px;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+.bpStatVal { font-size: 20px; font-weight: 700; font-family: var(--mono); color: var(--text); }
+.bpStatLabel { font-size: 10px; color: var(--text3); margin-top: 3px; }
+.bpStatSbp { color: #e55039 !important; }
+.bpStatDbp { color: var(--accent) !important; }
+.bpStatVar { color: var(--warn) !important; }
+
+.trendBadge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; padding: 4px 12px;
+  border-radius: 20px; font-family: var(--mono);
+  margin-top: 4px;
+}
+
+.trendUp { background: rgba(229,80,57,.1); color: #c0392b; border: 1.5px solid rgba(229,80,57,.25); }
+.trendDown { background: rgba(0,184,148,.1); color: #007d60; border: 1.5px solid rgba(0,184,148,.25); }
+.trendStable { background: rgba(0,168,114,.1); color: var(--accent); border: 1.5px solid rgba(0,168,114,.25); }
+
+/* ── Risk Prediction ──────────────────────── */
+.riskHeader {
+  background: var(--bg3);
+  border-radius: var(--r);
+  padding: 20px;
+  margin-bottom: 16px;
+  border: 1.5px solid var(--border);
+  text-align: center;
+}
+
+.overallRisk { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 10px; }
+.riskLevelBig { font-size: 36px; font-weight: 800; margin-bottom: 8px; font-family: var(--serif); }
+.riskLevelLow { color: #00b894; }
+.riskLevelModerate { color: #f39c12; }
+.riskLevelHigh { color: #e67e22; }
+.riskLevelCritical { color: #e55039; }
+
+.riskScoreGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+
+.riskScoreCard {
+  background: var(--bg2);
+  border-radius: var(--r);
+  border: 1.5px solid var(--border);
+  padding: 16px;
+  text-align: center;
+}
+
+.riskScoreCardTitle { font-size: 11px; color: var(--text3); font-family: var(--mono); margin-bottom: 10px; }
+
+.riskScoreVal { font-size: 32px; font-weight: 700; font-family: var(--mono); }
+.riskHiVal { color: #e55039; }
+.riskMdVal { color: #e67e22; }
+.riskLoVal { color: #00b894; }
+
+.riskBarBg { height: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; margin: 8px 0 4px; }
+.riskBarFill { height: 100%; border-radius: 3px; animation: barFill .8s ease both; }
+.riskBarHi { background: linear-gradient(90deg, #e67e22, #e55039); }
+.riskBarMd { background: linear-gradient(90deg, #f39c12, #e67e22); }
+.riskBarLo { background: #00b894; }
+
+.riskFactorList { display: flex; flex-direction: column; gap: 6px; }
+
+.riskFactor {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg3);
+  border-radius: var(--rs);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.rfWeight {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  min-width: 36px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.rfWeightHi { background: rgba(229,80,57,.12); color: #c0392b; }
+.rfWeightMd { background: rgba(230,126,34,.12); color: #a54500; }
+.rfWeightLo { background: rgba(0,184,148,.12); color: #007d60; }
+
+/* ── Medication Support ───────────────────── */
+.recBanner {
+  border-radius: var(--r);
+  padding: 20px 22px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.recBannerContinue { background: rgba(0,184,148,.08); border: 2px solid rgba(0,184,148,.3); }
+.recBannerIntensify { background: rgba(230,126,34,.08); border: 2px solid rgba(230,126,34,.3); }
+.recBannerReduce { background: rgba(243,156,18,.08); border: 2px solid rgba(243,156,18,.3); }
+.recBannerMonitor { background: rgba(0,168,114,.08); border: 2px solid rgba(0,168,114,.3); }
+.recBannerUrgent { background: rgba(229,80,57,.08); border: 2px solid rgba(229,80,57,.35); }
+
+.recIcon { font-size: 32px; flex-shrink: 0; margin-top: 2px; }
+.recType { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .1em; margin-bottom: 4px; }
+.recTypeContinue { color: #007d60; }
+.recTypeIntensify { color: #a54500; }
+.recTypeReduce { color: #9a6700; }
+.recTypeMonitor { color: var(--accent); }
+.recTypeUrgent { color: #c0392b; }
+
+.recTitle { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.recThai { font-size: 13px; color: var(--text2); }
+
+.reasonList { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+
+.reasonItem {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 9px 12px;
+  background: var(--bg3);
+  border-radius: var(--rs);
+  border: 1px solid var(--border);
+  font-size: 13px; color: var(--text);
+  line-height: 1.55;
+}
+
+.reasonBullet { color: var(--accent); margin-top: 1px; flex-shrink: 0; font-weight: 700; }
+
+.warnBox {
+  background: rgba(229,80,57,.06);
+  border: 1.5px solid rgba(229,80,57,.25);
+  border-radius: var(--rs);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.warnItem { font-size: 13px; color: #c0392b; padding: 3px 0; line-height: 1.55; }
+
+/* ── Feature Importance (SHAP-like) ──────── */
+.shapGrid { display: flex; flex-direction: column; gap: 8px; }
+
+.shapRow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg3);
+  border-radius: var(--rs);
+  border: 1px solid var(--border);
+}
+
+.shapLabel { font-size: 12px; color: var(--text2); flex: 1; min-width: 0; }
+.shapBarWrap { width: 120px; height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.shapBarPos { height: 100%; border-radius: 4px; background: #00b894; animation: barFill .8s ease both; }
+.shapBarNeg { height: 100%; border-radius: 4px; background: #e55039; animation: barFill .8s ease both; }
+.shapPct { font-size: 11px; font-family: var(--mono); font-weight: 700; color: var(--text3); width: 32px; text-align: right; }
+.shapDir { font-size: 14px; flex-shrink: 0; }
+
+/* ── Doctor Decision ──────────────────────── */
+.decisionGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+
+.decisionCard {
+  background: var(--bg3);
+  border-radius: var(--r);
+  border: 2px solid var(--border);
+  padding: 22px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+}
+
+.decisionCard:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+
+.decSelApprove { border-color: #00b894 !important; background: rgba(0,184,148,.06) !important; }
+.decSelModify { border-color: #f39c12 !important; background: rgba(243,156,18,.06) !important; }
+.decSelReject { border-color: #e55039 !important; background: rgba(229,80,57,.06) !important; }
+
+.decIcon { font-size: 32px; margin-bottom: 10px; }
+.decTitle { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.decDesc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+.noteField {
+  width: 100%; padding: 12px 14px;
+  background: var(--bg);
+  border: 1.5px solid var(--border2);
+  border-radius: var(--rs); color: var(--text);
+  font-family: var(--sans); font-size: 14px;
+  resize: vertical; min-height: 88px; line-height: 1.6;
+  transition: border-color 0.2s; outline: none;
+  margin-bottom: 14px;
+}
+
+.noteField:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,168,114,.1); }
+
+.followUpGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
+
+.followUpBtn {
+  padding: 10px;
+  border-radius: var(--rs);
+  border: 1.5px solid var(--border2);
+  background: var(--bg3);
+  color: var(--text2);
+  font-family: var(--sans);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; text-align: center;
+  transition: all .2s;
+}
+
+.followUpBtn:hover { border-color: var(--accent); color: var(--accent); }
+.followUpActive { border-color: var(--accent) !important; background: rgba(0,168,114,.08) !important; color: var(--accent) !important; font-weight: 700 !important; }
+
+/* ── Confirm / Summary ────────────────────── */
+.confirmBanner {
+  text-align: center;
+  padding: 30px 16px 22px;
+}
+
+.confirmCircle {
+  width: 80px; height: 80px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 36px; margin: 0 auto 16px;
+}
+
+.confirmCircleApprove { background: linear-gradient(135deg, #00b894, #00a872); box-shadow: 0 4px 20px rgba(0,184,148,.3); }
+.confirmCircleModify { background: linear-gradient(135deg, #f39c12, #e67e22); box-shadow: 0 4px 20px rgba(230,126,34,.3); }
+.confirmCircleReject { background: linear-gradient(135deg, #e55039, #c0392b); box-shadow: 0 4px 20px rgba(229,80,57,.3); }
+
+.confirmTitle { font-size: 24px; font-weight: 700; margin-bottom: 6px; color: var(--text); font-family: var(--serif); }
+.confirmSub { font-size: 14px; color: var(--text2); }
+
+.summaryCard {
+  background: var(--bg3);
+  border-radius: var(--r);
+  border: 1.5px solid var(--border2);
+  padding: 18px 20px;
+  margin-bottom: 12px;
+}
+
+.summaryRow {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.summaryRow:last-child { border-bottom: none; }
+.summaryKey { color: var(--text2); font-weight: 500; }
+.summaryVal { font-weight: 600; color: var(--text); text-align: right; max-width: 60%; }
+.summaryValAccent { color: var(--accent) !important; }
+
+.refId {
+  display: inline-block; margin-top: 14px;
+  font-family: var(--mono); font-size: 12px; color: var(--accent);
+  padding: 5px 16px;
+  background: rgba(0,168,114,.08); border-radius: 20px;
+  border: 1px solid rgba(0,168,114,.2);
+}
+
+/* ── Step Header ──────────────────────────── */
+.stepHdr {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 4px;
+}
+
+.stepNum {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--accent); font-weight: 700;
+  padding: 2px 8px; border-radius: 10px;
+  background: rgba(0,168,114,.1); border: 1px solid rgba(0,168,114,.2);
+}
+
+.stepTitle { font-size: 20px; font-weight: 700; color: var(--text); font-family: var(--serif); }
+.stepDesc { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+
+/* ── Buttons ──────────────────────────────── */
+.btnRow { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; gap: 10px; }
+.btnP {
+  padding: 12px 28px; border-radius: var(--rs);
+  font-family: var(--sans); font-size: 14px; font-weight: 600;
+  cursor: pointer; border: none;
+  background: var(--accent); color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0,168,114,.25);
+  transition: all .2s;
+}
+.btnP:hover { background: #009060; transform: translateY(-1px); }
+.btnP:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+.btnS {
+  padding: 12px 24px; border-radius: var(--rs);
+  font-family: var(--sans); font-size: 14px; font-weight: 500;
+  cursor: pointer; transition: all .2s;
+  background: var(--bg); color: var(--text2);
+  border: 1.5px solid var(--border2);
+}
+.btnS:hover { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+
+.btnDanger {
+  padding: 12px 24px; border-radius: var(--rs);
+  font-family: var(--sans); font-size: 14px; font-weight: 600;
+  cursor: pointer; border: none; transition: all .2s;
+  background: #e55039; color: #fff;
+  box-shadow: 0 2px 8px rgba(229,80,57,.25);
+}
+.btnDanger:hover { background: #c0392b; transform: translateY(-1px); }
+
+/* ── Misc ─────────────────────────────────── */
+.divider { height: 1px; background: var(--border); margin: 18px 0; }
+.lbl { font-size: 11px; font-weight: 600; color: var(--text3); font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 10px; }
+
+.aiNote {
+  background: rgba(0,168,114,.06);
+  border: 1.5px solid rgba(0,168,114,.2);
+  border-radius: var(--rs);
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+.aiNoteIcon { color: var(--accent); }
