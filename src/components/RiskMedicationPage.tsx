@@ -1,6 +1,70 @@
 'use client'
-import type { CardioPatient, RiskResult, MedRecommendation } from '@/lib/types'
+import { useState, useEffect } from 'react'
+import type { CardioPatient, RiskResult, MedRecommendation, MLRiskPrediction } from '@/lib/types'
+import { runMLSimilarityAsync } from '@/lib/mlEngine'
 import styles from './HyperSense.module.css'
+
+const SEV_COLOR  = { low: '#00a872', moderate: '#d97706', high: '#dc2626' }
+const SEV_BG     = { low: 'rgba(0,168,114,.08)', moderate: 'rgba(217,119,6,.08)', high: 'rgba(220,38,38,.08)' }
+const SEV_BORDER = { low: 'rgba(0,168,114,.25)', moderate: 'rgba(217,119,6,.25)', high: 'rgba(220,38,38,.3)' }
+
+function MLPanel({ patient }: { patient: CardioPatient }) {
+  const [predictions, setPredictions] = useState<MLRiskPrediction[]>([])
+  const [loading,     setLoading]     = useState(true)
+  const [source,      setSource]      = useState<'api' | 'fallback'>('fallback')
+
+  useEffect(() => {
+    setLoading(true)
+    runMLSimilarityAsync(patient).then(results => {
+      const fromAPI = results.some(r => r.basis[0]?.includes('SHAP'))
+      setSource(fromAPI ? 'api' : 'fallback')
+      setPredictions(results)
+      setLoading(false)
+    })
+  }, [patient.id])
+
+  if (loading) return (
+    <div style={{ background: 'rgba(59,130,246,.03)', border: '1.5px solid rgba(59,130,246,.15)', borderRadius: 'var(--r)', padding: '16px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text3)', fontSize: 13 }}>
+      <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid #3b82f6', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+      กำลังวิเคราะห์ความเสี่ยงจาก ML...
+    </div>
+  )
+
+  if (predictions.length === 0) return null
+
+  return (
+    <div style={{ background: 'rgba(59,130,246,.03)', border: '1.5px solid rgba(59,130,246,.2)', borderRadius: 'var(--r)', padding: '16px 18px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: source === 'api' ? '#00a872' : '#3b82f6', flexShrink: 0 }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#3b82f6', fontFamily: 'var(--mono)', letterSpacing: '.06em' }}>ML RISK ANALYSIS</span>
+        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: source === 'api' ? 'rgba(0,168,114,.1)' : 'rgba(107,114,128,.1)', color: source === 'api' ? '#00a872' : '#6b7280', border: `1px solid ${source === 'api' ? 'rgba(0,168,114,.3)' : 'rgba(107,114,128,.2)'}`, fontFamily: 'var(--mono)', fontWeight: 600 }}>
+          {source === 'api' ? 'XGBoost + SHAP' : 'Rule-based'}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {predictions.map((p, i) => (
+          <div key={i} style={{ background: SEV_BG[p.severity], border: `1.5px solid ${SEV_BORDER[p.severity]}`, borderRadius: 'var(--rs)', padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{p.condition}</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 80, height: 6, background: 'var(--surface)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ width: `${p.probability}%`, height: '100%', background: SEV_COLOR[p.severity], borderRadius: 3 }} />
+                </div>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: SEV_COLOR[p.severity] }}>{p.probability}%</span>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.7 }}>
+              {p.basis.slice(0, 3).map((b, bi) => <div key={bi} style={{ fontFamily: 'var(--mono)' }}>{b}</div>)}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+        {source === 'api' ? 'XGBoost trained บน dataset จริง · SHAP explainability' : 'Rule-based fallback — รัน python train.py เพื่อใช้ XGBoost จริง'}
+      </div>
+    </div>
+  )
+}
 
 const LEVEL_BIG: Record<string, string> = {
   Low: styles.riskLevelLow, Moderate: styles.riskLevelModerate,
@@ -12,12 +76,12 @@ const LEVEL_TH: Record<string, string> = {
 }
 
 const REC_CFG = {
-  CONTINUE:  { banner: styles.recBannerContinue,  type: styles.recTypeContinue,  label: 'CONTINUE' },
-  INTENSIFY: { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'INTENSIFY' },
-  REDUCE:    { banner: styles.recBannerReduce,    type: styles.recTypeReduce,    label: 'REDUCE' },
-  SWITCH:    { banner: styles.recBannerMonitor,   type: styles.recTypeMonitor,   label: 'SWITCH' },
-  MONITOR:   { banner: styles.recBannerMonitor,   type: styles.recTypeMonitor,   label: 'MONITOR' },
-  URGENT_REVIEW: { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'INTENSIFY' },
+  CONTINUE:     { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
+  INTENSIFY:    { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
+  REDUCE:       { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
+  SWITCH:       { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
+  MONITOR:      { banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
+  URGENT_REVIEW:{ banner: styles.recBannerIntensify, type: styles.recTypeIntensify, label: 'แนวทางปรับยา' },
 }
 
 function RiskBar({ value, level }: { value: number; level: string }) {
@@ -45,7 +109,6 @@ export default function RiskMedicationPage({
   onNext: () => void
 }) {
   const cfg = REC_CFG[recommendation.type] ?? REC_CFG.MONITOR
-  const topFactors = [...risk.riskFactors].sort((a, b) => b.weight - a.weight).slice(0, 5)
 
   return (
     <div>
@@ -64,9 +127,6 @@ export default function RiskMedicationPage({
           {LEVEL_TH[risk.riskLevel]}
         </div>
         <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', gap: 10 }}>
-          <div style={{ background: 'var(--bg2)', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', padding: '7px 20px', fontFamily: 'var(--mono)', fontSize: 13 }}>
-            Risk Score: <strong>{risk.riskScore}</strong>/100
-          </div>
           <div style={{ background: 'var(--bg2)', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', padding: '7px 20px', fontFamily: 'var(--mono)', fontSize: 13 }}>
             SBP เฉลี่ย: <strong>{risk.avgSBP}</strong> mmHg
           </div>
@@ -92,20 +152,9 @@ export default function RiskMedicationPage({
         </div>
       </div>
 
-      {/* ── Feature Importance ───────────────────────────── */}
-      <div className={styles.lbl}>ปัจจัยที่ส่งผลต่อความเสี่ยง (Risk Factors)</div>
-      <div className={styles.riskFactorList} style={{ marginBottom: 18 }}>
-        {topFactors.map((f, i) => {
-          const cls = f.weight >= 15 ? styles.rfWeightHi : f.weight >= 8 ? styles.rfWeightMd : styles.rfWeightLo
-          return (
-            <div key={i} className={styles.riskFactor}>
-              <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', minWidth: 18 }}>#{i + 1}</span>
-              <span style={{ flex: 1 }}>{f.factor}</span>
-              <span className={[styles.rfWeight, cls].join(' ')}>+{f.weight}</span>
-            </div>
-          )
-        })}
-      </div>
+      {/* ── ML Risk Analysis ─────────────────────────────── */}
+      <div className={styles.lbl} style={{ marginBottom: 10 }}>การวิเคราะห์ความเสี่ยงจาก ML (ข้อมูลในอดีต)</div>
+      <MLPanel patient={patient} />
 
       <div className={styles.divider} />
 
@@ -157,17 +206,6 @@ export default function RiskMedicationPage({
         {recommendation.type === 'MONITOR' && (
           <div><strong>ใช้ยาตามเดิมและติดตามอาการใกล้ชิด</strong> — ความดันอยู่ในเกณฑ์ชายแดน ยังไม่ต้องปรับยา แต่ควรนัดติดตามในระยะเวลาสั้น</div>
         )}
-      </div>
-
-      {/* Reasons */}
-      <div className={styles.lbl} style={{ marginTop: 14, marginBottom: 8 }}>เหตุผลการแนะนำ</div>
-      <div className={styles.reasonList} style={{ marginBottom: 14 }}>
-        {recommendation.reasons.map((r, i) => (
-          <div key={i} className={styles.reasonItem}>
-            <span className={styles.reasonBullet}>›</span>
-            <span>{r}</span>
-          </div>
-        ))}
       </div>
 
       <div className={styles.aiNote} style={{ marginTop: 12 }}>

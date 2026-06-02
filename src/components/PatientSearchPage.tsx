@@ -10,12 +10,6 @@ async function searchPatient(query: string): Promise<CardioPatient | null> {
   return findPatientByNationalId(query)
 }
 
-const DEMO = [
-  { label: '10001 — High Risk (BP วันนี้แล้ว)',    val: '10001' },
-  { label: '10002 — Moderate (ต้องกรอก BP)',         val: '10002' },
-  { label: '10003 — Critical (4 โรคร่วม)',           val: '10003' },
-  { label: '10005 — REDUCE (ความดันต่ำ / CKD)',      val: '10005' },
-]
 
 export default function PatientSearchPage({
   onFound, onBack,
@@ -113,22 +107,6 @@ export default function PatientSearchPage({
             borderRadius: 'var(--rs)', fontSize: 13, color: '#dc2626',
           }}>{error}</div>
         )}
-
-        {/* Quick picks */}
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8, fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '.06em' }}>ตัวอย่างผู้ป่วย Demo</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {DEMO.map(d => (
-              <button key={d.val} onClick={() => { setQuery(d.val); setError('') }} style={{
-                fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer',
-                background: query === d.val ? 'rgba(0,168,114,.1)' : 'var(--bg3)',
-                border: `1.5px solid ${query === d.val ? 'var(--accent)' : 'var(--border2)'}`,
-                color: query === d.val ? 'var(--accent)' : 'var(--text2)',
-                fontFamily: 'var(--mono)', transition: 'all .15s',
-              }}>{d.label}</button>
-            ))}
-          </div>
-        </div>
 
         <div style={{ marginTop: 14, fontSize: 12, color: 'var(--text3)' }}>
           <span style={{ color: 'var(--accent)', fontWeight: 600 }}>PDPA:</span>{' '}

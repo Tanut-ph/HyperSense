@@ -25,6 +25,8 @@ export interface BPVisit {
   heartRate: number
   weight: number
   bmi: number
+  note?: string
+  recordedBy?: string
 }
 
 export interface PatientLab {
@@ -64,6 +66,17 @@ export interface Comorbidities {
   dementia: boolean
 }
 
+export interface DoctorRecord {
+  id?: string
+  date: string
+  doctorName: string
+  notes: string
+  recommendation?: string
+  nextApptDate?: string
+  nextApptNote?: string
+  refId?: string
+}
+
 export interface CardioPatient {
   id: string                  // 5-7 digit ID
   dbId?: string
@@ -80,6 +93,7 @@ export interface CardioPatient {
   labs: PatientLab
   clinicalNotes?: string
   nextAppointment?: string
+  doctorRecords?: DoctorRecord[]
 }
 
 export interface AppointmentRecord {

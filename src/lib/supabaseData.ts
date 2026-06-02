@@ -10,7 +10,7 @@ import { supabase, hasSupabaseEnv } from '@/lib/supabase'
 import type {
   CardioPatient, BPVisit, PatientLab,
   Medication, Comorbidities,
-  RiskResult, MedRecommendation,
+  RiskResult, MedRecommendation, DoctorRecord,
 } from './types'
 
 // ── Raw Supabase row types ───────────────────────────────────────────────────
@@ -53,6 +53,17 @@ interface RawMedication {
   is_active: boolean
 }
 
+interface RawDoctorRecord {
+  id: string
+  created_at: string
+  doctor_id: string | null
+  clinical_notes: string | null
+  recommendation: string | null
+  next_appt_date: string | null
+  appt_note: string | null
+  ref_id: string | null
+}
+
 interface RawPatient {
   id: string
   patient_code: string
@@ -63,8 +74,9 @@ interface RawPatient {
   bp_target: number | null
   visits: RawVisit[]
   labs: RawLab[]
-  comorbidities: RawComorbidity[] | RawComorbidity   // PostgREST may return object or array
+  comorbidities: RawComorbidity[] | RawComorbidity
   medications: RawMedication[]
+  doctor_records: RawDoctorRecord[]
 }
 
 // ── Mapper: Supabase → CardioPatient ────────────────────────────────────────
@@ -124,9 +136,23 @@ function mapPatient(row: RawPatient): CardioPatient {
       frequency:  m.frequency  ?? '',
     }))
 
+  // Doctor records — sort newest first
+  const doctorRecords: DoctorRecord[] = [...(row.doctor_records ?? [])]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .map(r => ({
+      id:            r.id,
+      date:          r.created_at.split('T')[0],
+      doctorName:    r.doctor_id   ?? 'แพทย์',
+      notes:         r.clinical_notes ?? '',
+      recommendation: r.recommendation ?? undefined,
+      nextApptDate:  r.next_appt_date  ?? undefined,
+      nextApptNote:  r.appt_note       ?? undefined,
+      refId:         r.ref_id          ?? undefined,
+    }))
+
   return {
     id:         row.patient_code,
-    dbId:       row.id,          // Supabase UUID — kept for write operations
+    dbId:       row.id,
     nationalId: row.national_id,
     name:       row.full_name,
     age:        row.age,
@@ -136,6 +162,7 @@ function mapPatient(row: RawPatient): CardioPatient {
     medications,
     visits,
     labs,
+    doctorRecords: doctorRecords.length > 0 ? doctorRecords : undefined,
   }
 }
 
@@ -145,7 +172,8 @@ const PATIENT_SELECT = `
   visits (*),
   labs (*),
   comorbidities (*),
-  medications (*)
+  medications (*),
+  doctor_records (*)
 `
 
 // ── fetchPatientByQuery ──────────────────────────────────────────────────────

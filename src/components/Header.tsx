@@ -30,8 +30,8 @@ export default function Header({
 
   return (
     <div className={styles.hdr}>
-      <div className={styles.logo}>HS</div>
-      <div className={styles.name}>HyperSense</div>
+      <img src="/logo_hypersense.png" alt="HyperSense" className={styles.logo} />
+      { <div className={styles.name}>HyperSense</div> }
 
       {doctorName && userRole && (
         <div className={styles.doctorInfo}>
