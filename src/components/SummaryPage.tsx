@@ -14,17 +14,22 @@ const ORDERED_CLASSES: DrugClass[] = [
   ...DRUG_GROUPS.map(g => g.class).filter(c => !PRIMARY_DRUG_CLASSES.includes(c)),
 ]
 
-/** กลุ่มยาที่เลือกไม่ได้ในแถวนี้ = กลุ่มเดียวกับแถวอื่น (ห้ามซ้ำ) + กลุ่มที่ห้ามใช้ร่วม (avoid) */
-function getDisabledClasses(meds: Medication[], currentIdx: number): Set<DrugClass> {
-  const disabled = new Set<DrugClass>()
+/**
+ * กลุ่มยาที่ห้ามเลือกในแถวนี้:
+ *   - กลุ่มเดียวกับแถวอื่น (ห้ามซ้ำ)
+ *   - กลุ่มที่มี severity='avoid' กับยาที่เลือกไว้แล้ว
+ * ⇒ options เหล่านี้จะถูก filter ออกจาก DOM เลย (ไม่ใช้แค่ disabled)
+ */
+function getBlockedClasses(meds: Medication[], currentIdx: number): Set<DrugClass> {
+  const blocked = new Set<DrugClass>()
   meds.forEach((m, i) => {
     if (i === currentIdx) return
-    disabled.add(m.drugClass)                         // ห้ามใช้ยาชนิดเดียวกันซ้ำ
-    for (const c of inSystemConflicts(m.drugClass)) { // ห้ามใช้กลุ่มที่ขัดแย้งกัน
-      if (c.severity === 'avoid') disabled.add(c.cls)
+    blocked.add(m.drugClass)
+    for (const c of inSystemConflicts(m.drugClass)) {
+      if (c.severity === 'avoid') blocked.add(c.cls)
     }
   })
-  return disabled
+  return blocked
 }
 
 // ─── Edit Medication Row ─────────────────────────────────────────────────────
@@ -37,29 +42,36 @@ function MedEditRow({
   onChange: (m: Medication) => void
   onRemove: () => void
 }) {
-  const disabled = getDisabledClasses(allMeds, index)
+  const blocked = getBlockedClasses(allMeds, index)
   const group = getDrugGroup(med.drugClass)
   const drugNames = group?.drugs ?? []
   const missing = !med.drugName || !med.dose || !med.frequency
+  // classes ที่แสดงได้ = ยังไม่ถูก block หรือเป็นตัวที่เลือกอยู่แล้ว
+  const availableClasses = ORDERED_CLASSES.filter(c => !blocked.has(c) || c === med.drugClass)
 
   return (
     <div style={{ marginBottom: 12, padding: '12px 14px', background: 'var(--bg)', border: `1.5px solid ${missing ? 'rgba(220,38,38,.3)' : 'var(--border2)'}`, borderRadius: 'var(--rs)' }}>
+      {blocked.size > 0 && (
+        <div style={{ fontSize: 11, color: '#b45309', background: 'rgba(217,119,6,.07)', border: '1px solid rgba(217,119,6,.25)', borderRadius: 'var(--rs)', padding: '5px 10px', marginBottom: 8 }}>
+          ⚠ กลุ่มที่ห้ามใช้ร่วมถูกซ่อนออกจากรายการแล้ว
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <div>
           <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4 }}>กลุ่มยา *</label>
           <select
             value={med.drugClass}
-            onChange={e => onChange({ ...med, drugClass: e.target.value as DrugClass, drugName: '' })}
+            onChange={e => {
+              const next = e.target.value as DrugClass
+              // guard ชั้นที่ 2 — ป้องกันกรณีเบราว์เซอร์ส่งค่าที่ถูก block มา
+              if (blocked.has(next) && next !== med.drugClass) return
+              onChange({ ...med, drugClass: next, drugName: '' })
+            }}
             style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--rs)', border: '1.5px solid var(--border2)', background: '#fff', fontSize: 12, cursor: 'pointer' }}
           >
-            {ORDERED_CLASSES.map(c => {
+            {availableClasses.map(c => {
               const g = getDrugGroup(c)!
-              const isDis = disabled.has(c) && c !== med.drugClass
-              return (
-                <option key={c} value={c} disabled={isDis}>
-                  {isDis ? `${g.short} — เลือกไม่ได้ (ซ้ำ/ห้ามใช้ร่วม)` : g.short}
-                </option>
-              )
+              return <option key={c} value={c}>{g.short}</option>
             })}
           </select>
         </div>

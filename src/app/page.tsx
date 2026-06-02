@@ -59,8 +59,8 @@ export default function Home() {
     go(3)
   }
 
-  // แพทย์: ไปต่อ BP Trend → คำนวณความเสี่ยง
-  const handlePatientNext = (newVisit: BPVisit | null) => {
+  // แพทย์: ไปต่อ BP Trend (หรือข้ามไปวิเคราะห์ยาหาก HBPM > Clinic)
+  const handlePatientNext = (newVisit: BPVisit | null, hbpm?: { sbp: number; dbp: number }) => {
     setNewBPVisit(newVisit)
     let patient: CardioPatient = basePatient!
     if (newVisit) patient = { ...patient, visits: [...patient.visits, newVisit] }
@@ -68,7 +68,12 @@ export default function Home() {
     const risk = calculateRisk(patient)
     const rec  = getMedicationRecommendation(patient, risk)
     setRiskResult(risk); setMedRec(rec)
-    go(4)
+    // ถ้ามี HBPM และ HBPM SBP สูงกว่า Clinic → ข้ามหน้า BP Trend ไปหน้าวิเคราะห์ยาเลย
+    if (hbpm && newVisit && hbpm.sbp > newVisit.sbp) {
+      go(5)
+    } else {
+      go(4)
+    }
   }
 
   // พยาบาล/เทคนิคการแพทย์: กรอกข้อมูลของตัวเองเสร็จ → จบ
@@ -131,7 +136,7 @@ export default function Home() {
           doctorName={doctorName}
           userRole={userRole}
           onBack={() => go(2)}
-          onNext={handlePatientNext}
+          onNext={(v, hbpm) => handlePatientNext(v, hbpm)}
           onFinish={handleFinishRole}
         />
       )}

@@ -621,24 +621,36 @@ function BPSection({
   patient: CardioPatient
   doctorName: string
   userRole: UserRole
-  onNewVisit: (v: BPVisit | null) => void
+  onNewVisit: (v: BPVisit | null, hbpm?: { sbp: number; dbp: number }) => void
 }) {
-  const lastVisit    = patient.visits[patient.visits.length - 1]
+  const lastVisit     = patient.visits[patient.visits.length - 1]
   const recordedToday = lastVisit ? isToday(lastVisit.date) : false
-  const heightM = (patient.profile?.heightCm ?? 0) / 100 || 1.65
 
   const [sbp,    setSbp]    = useState(recordedToday ? String(lastVisit.sbp) : '')
   const [dbp,    setDbp]    = useState(recordedToday ? String(lastVisit.dbp) : '')
   const [hr,     setHr]     = useState(recordedToday ? String(lastVisit.heartRate) : '')
   const [wt,     setWt]     = useState(lastVisit ? String(lastVisit.weight) : '')
+  // ส่วนสูง — prefill จาก profile, เก็บ/อัปเดต patient_history เมื่อบันทึก
+  const [ht,     setHt]     = useState(String(patient.profile?.heightCm ?? ''))
   const [resp,   setResp]   = useState(recordedToday && lastVisit.resp ? String(lastVisit.resp) : '')
   const [o2sat,  setO2sat]  = useState(recordedToday && lastVisit.o2sat ? String(lastVisit.o2sat) : '')
   const [temp,   setTemp]   = useState(recordedToday && lastVisit.temp ? String(lastVisit.temp) : '')
   const [note,   setNote]   = useState('')
+  // HBPM (doctor only — ไม่บันทึก Supabase)
+  const [useHbpm,  setUseHbpm]  = useState(false)
+  const [hbpmSbp,  setHbpmSbp]  = useState('')
+  const [hbpmDbp,  setHbpmDbp]  = useState('')
   const [err,    setErr]    = useState('')
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
   const [dbStatus, setDbStatus] = useState<'idle'|'ok'|'warn'>('idle')
+  const [savedHbpm, setSavedHbpm] = useState<{ sbp: number; dbp: number } | undefined>()
+
+  // BMI preview: คำนวณเมื่อใส่ทั้งน้ำหนักและส่วนสูง
+  const wtNum = parseFloat(wt), htNum = parseFloat(ht)
+  const bmiPreview = wtNum > 0 && htNum > 0
+    ? parseFloat((wtNum / ((htNum / 100) ** 2)).toFixed(1))
+    : null
 
   const handleSave = async () => {
     const s = parseInt(sbp), d = parseInt(dbp), h = parseInt(hr), w = parseFloat(wt)
@@ -649,7 +661,8 @@ function BPSection({
 
     const today  = new Date().toISOString().split('T')[0]
     const weight = w || lastVisit?.weight || 0
-    const bmi    = weight ? parseFloat((weight / (heightM ** 2)).toFixed(1)) : lastVisit?.bmi ?? 0
+    const htM    = htNum > 0 ? htNum / 100 : (patient.profile?.heightCm ?? 165) / 100
+    const bmi    = weight > 0 ? parseFloat((weight / (htM ** 2)).toFixed(1)) : lastVisit?.bmi ?? 0
     const newVisit: BPVisit = {
       date: today, sbp: s, dbp: d, heartRate: h, weight, bmi,
       resp: resp ? parseFloat(resp) : undefined,
@@ -662,12 +675,19 @@ function BPSection({
     if (hasSupabaseEnv && patient.dbId) {
       const result = await saveVisit(patient.dbId, newVisit, doctorName)
       setDbStatus(result.success ? 'ok' : 'warn')
+      // อัปเดตส่วนสูงใน patient_history เมื่อกรอกใหม่
+      if (htNum > 0) await savePatientHistory(patient.dbId, { heightCm: htNum })
     }
-    setSaving(false); onNewVisit(newVisit); setSaved(true)
+    const hbpm = useHbpm && hbpmSbp && hbpmDbp
+      ? { sbp: parseInt(hbpmSbp), dbp: parseInt(hbpmDbp) }
+      : undefined
+    setSavedHbpm(hbpm)
+    setSaving(false); onNewVisit(newVisit, hbpm); setSaved(true)
   }
 
   if (saved) {
     const s = parseInt(sbp), d = parseInt(dbp), h = parseInt(hr)
+    const hbpmHigher = savedHbpm && savedHbpm.sbp > s
     return (
       <div style={{ background: 'rgba(0,184,148,.04)', border: '1.5px solid rgba(0,168,114,.25)', borderRadius: 'var(--r)', padding: '18px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
@@ -680,14 +700,31 @@ function BPSection({
             แก้ไขค่าความดัน
           </button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
-          {[['SBP', s, 'mmHg', s > 140], ['DBP', d, 'mmHg', d > 90], ['HR', h, 'bpm', h < 55], ['น้ำหนัก', parseFloat(wt) || lastVisit?.weight || 0, 'kg', false]].map(([l, v, u, hi]) => (
+        {/* ตาราง summary */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8, marginBottom: savedHbpm ? 12 : 0 }}>
+          {[
+            ['SBP', s, 'mmHg', s > 140], ['DBP', d, 'mmHg', d > 90], ['HR', h, 'bpm', h < 55],
+            ['น้ำหนัก', parseFloat(wt) || lastVisit?.weight || 0, 'kg', false],
+            ['ส่วนสูง', htNum || (patient.profile?.heightCm ?? '—'), 'ซม.', false],
+          ].map(([l, v, u, hi]) => (
             <div key={String(l)} style={{ background: '#fff', borderRadius: 'var(--rs)', padding: '10px', textAlign: 'center', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--mono)', color: hi ? 'var(--danger)' : 'var(--accent)' }}>{v as number}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)', color: hi ? 'var(--danger)' : 'var(--accent)' }}>{v as string|number}</div>
               <div style={{ fontSize: 10, color: 'var(--text3)' }}>{l} ({u})</div>
             </div>
           ))}
         </div>
+        {/* HBPM comparison */}
+        {savedHbpm && (
+          <div style={{ padding: '10px 14px', borderRadius: 'var(--rs)', background: hbpmHigher ? 'rgba(220,38,38,.06)' : 'rgba(0,168,114,.06)', border: `1.5px solid ${hbpmHigher ? 'rgba(220,38,38,.3)' : 'rgba(0,168,114,.3)'}`, fontSize: 13 }}>
+            <strong>เปรียบเทียบ HBPM:</strong>
+            <span style={{ fontFamily: 'var(--mono)', marginLeft: 10 }}>
+              Clinic <strong style={{ color: s > 140 ? '#dc2626' : 'var(--accent)' }}>{s}/{d}</strong>
+              {' vs '}
+              HBPM <strong style={{ color: savedHbpm.sbp > 140 ? '#dc2626' : 'var(--accent)' }}>{savedHbpm.sbp}/{savedHbpm.dbp}</strong>
+            </span>
+            {hbpmHigher && <span style={{ marginLeft: 10, color: '#dc2626', fontWeight: 700 }}>⚠ HBPM สูงกว่า → ระบบจะข้ามไปหน้าวิเคราะห์ยาโดยตรง</span>}
+          </div>
+        )}
         <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text3)' }}>กด <strong>แก้ไขค่าความดัน</strong> หากต้องการปรับค่าที่บันทึก</div>
       </div>
     )
@@ -695,23 +732,23 @@ function BPSection({
 
   return (
     <div style={{ background: 'rgba(217,119,6,.04)', border: '1.5px solid rgba(217,119,6,.2)', borderRadius: 'var(--r)', padding: '18px 20px' }}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        <span style={{ fontWeight: 700, color: 'var(--warn)', fontSize: 14, alignSelf: 'center', flex: 1 }}>
-          กรอกค่าความดันวันนี้ (กรอกเอง)
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+        <span style={{ fontWeight: 700, color: 'var(--warn)', fontSize: 14, flex: 1 }}>
+          กรอกค่าความดันวันนี้
           <span style={{ fontSize: 11, color: userRole === 'nurse' ? '#3b82f6' : 'var(--accent)', marginLeft: 8, fontFamily: 'var(--mono)' }}>
             [{userRole === 'nurse' ? 'พยาบาล' : 'แพทย์'}]
           </span>
         </span>
       </div>
 
-      {/* ค่าล่าสุดที่ดึงจากระบบ (เช่น ที่พยาบาลกรอกไว้) */}
+      {/* ค่าล่าสุดในระบบ */}
       {lastVisit && (
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--rs)', padding: '10px 12px', marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>
-            ค่าล่าสุดที่บันทึกในระบบ (ดึงจาก Supabase) · {new Date(lastVisit.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+            ค่าล่าสุดในระบบ · {new Date(lastVisit.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
             {lastVisit.recordedBy ? ` · โดย ${lastVisit.recordedBy}` : ''}
           </div>
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontFamily: 'var(--mono)', fontSize: 13 }}>
             <span>SBP/DBP <strong style={{ color: lastVisit.sbp > 140 ? '#dc2626' : 'var(--accent)' }}>{lastVisit.sbp}/{lastVisit.dbp}</strong></span>
             <span>HR <strong>{lastVisit.heartRate}</strong></span>
             <span>น้ำหนัก <strong>{lastVisit.weight} kg</strong></span>
@@ -725,23 +762,34 @@ function BPSection({
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+      {/* ── Clinic BP + vitals ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+        {useHbpm ? 'ความดัน Clinic (บันทึกลงระบบ)' : 'ความดันโลหิต + สัญญาณชีพ'}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginBottom: 10 }}>
         {[
           { l: 'SBP (mmHg)*', val: sbp, set: setSbp, ph: '120' },
           { l: 'DBP (mmHg)*', val: dbp, set: setDbp, ph: '80' },
           { l: 'HR (bpm)*',   val: hr,  set: setHr,  ph: '72' },
           { l: 'น้ำหนัก (kg)', val: wt, set: setWt, ph: String(lastVisit?.weight ?? '') },
+          { l: 'ส่วนสูง (ซม.)', val: ht, set: setHt, ph: String(patient.profile?.heightCm ?? '') },
         ].map(({ l, val, set, ph }) => (
           <div key={l}>
             <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>{l}</label>
             <input type="number" min="0" value={val} onChange={e => set(nn(e.target.value))} placeholder={ph}
-              style={{ width: '100%', padding: '10px 12px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '10px 8px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
               onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = ''} />
           </div>
         ))}
       </div>
+      {/* BMI preview */}
+      {bmiPreview && (
+        <div style={{ fontSize: 12, color: bmiPreview >= 25 ? '#b45309' : 'var(--accent)', marginBottom: 10, fontFamily: 'var(--mono)' }}>
+          BMI (คำนวณ): <strong>{bmiPreview}</strong> kg/m² {bmiPreview >= 30 ? '(อ้วน)' : bmiPreview >= 25 ? '(น้ำหนักเกิน)' : '(ปกติ)'}
+        </div>
+      )}
 
-      {/* สัญญาณชีพเพิ่มเติม (ไม่บังคับ) */}
+      {/* สัญญาณชีพเพิ่มเติม */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
         {[
           { l: 'RR (/min)', val: resp, set: setResp, ph: '18' },
@@ -756,6 +804,50 @@ function BPSection({
           </div>
         ))}
       </div>
+
+      {/* ── HBPM (doctor only) ── */}
+      {userRole === 'doctor' && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: useHbpm ? '#dc2626' : 'var(--text2)', marginBottom: useHbpm ? 10 : 0 }}>
+            <input type="checkbox" checked={useHbpm} onChange={e => setUseHbpm(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#dc2626' }} />
+            วัดค่า HBPM (ความดันที่บ้าน) ด้วย
+            <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text3)' }}>— ไม่บันทึกลง Supabase</span>
+          </label>
+          {useHbpm && (
+            <div style={{ background: 'rgba(220,38,38,.04)', border: '1.5px solid rgba(220,38,38,.2)', borderRadius: 'var(--rs)', padding: '12px 14px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>ค่าความดัน HBPM (ไม่บันทึกลงระบบ)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>SBP HBPM (mmHg)</label>
+                  <input type="number" min="0" value={hbpmSbp} onChange={e => setHbpmSbp(nn(e.target.value))} placeholder="120"
+                    style={{ width: '100%', padding: '10px 12px', background: '#fff', border: '1.5px solid rgba(220,38,38,.3)', borderRadius: 'var(--rs)', fontFamily: 'var(--mono)', fontSize: 15, outline: 'none', boxSizing: 'border-box', color: '#dc2626' }}
+                    onFocus={e => e.target.style.borderColor = '#dc2626'} onBlur={e => e.target.style.borderColor = 'rgba(220,38,38,.3)'} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>DBP HBPM (mmHg)</label>
+                  <input type="number" min="0" value={hbpmDbp} onChange={e => setHbpmDbp(nn(e.target.value))} placeholder="80"
+                    style={{ width: '100%', padding: '10px 12px', background: '#fff', border: '1.5px solid rgba(220,38,38,.3)', borderRadius: 'var(--rs)', fontFamily: 'var(--mono)', fontSize: 15, outline: 'none', boxSizing: 'border-box', color: '#dc2626' }}
+                    onFocus={e => e.target.style.borderColor = '#dc2626'} onBlur={e => e.target.style.borderColor = 'rgba(220,38,38,.3)'} />
+                </div>
+                {/* preview เปรียบเทียบ live */}
+                {sbp && hbpmSbp && (
+                  <div style={{ padding: '10px 12px', borderRadius: 'var(--rs)', background: parseInt(hbpmSbp) > parseInt(sbp) ? 'rgba(220,38,38,.08)' : 'rgba(0,168,114,.08)', border: `1px solid ${parseInt(hbpmSbp) > parseInt(sbp) ? 'rgba(220,38,38,.3)' : 'rgba(0,168,114,.3)'}`, textAlign: 'center', fontSize: 12 }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>
+                      {parseInt(hbpmSbp) > parseInt(sbp) ? '▲ HBPM สูงกว่า' : '▼ HBPM ต่ำกว่า'}
+                    </div>
+                    <div style={{ color: 'var(--text3)', fontSize: 10, marginTop: 2 }}>
+                      Clinic {sbp} vs HBPM {hbpmSbp}
+                    </div>
+                    {parseInt(hbpmSbp) > parseInt(sbp) && (
+                      <div style={{ fontSize: 10, color: '#dc2626', marginTop: 4 }}>จะข้ามไปหน้าวิเคราะห์ยาโดยตรง</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginBottom: 12 }}>
         <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>หมายเหตุการกรอกความดัน (ถ้ามี)</label>
@@ -858,18 +950,19 @@ export default function PatientDetailPage({
   doctorName: string
   userRole: UserRole
   onBack: () => void
-  onNext: (newVisit: BPVisit | null) => void
+  onNext: (newVisit: BPVisit | null, hbpm?: { sbp: number; dbp: number }) => void
   onFinish?: (newVisit: BPVisit | null) => void
 }) {
   const [newVisit,     setNewVisit]     = useState<BPVisit | null>(null)
+  const [newHbpm,      setNewHbpm]      = useState<{ sbp: number; dbp: number } | undefined>()
   const [savedLabs,    setSavedLabs]    = useState<Partial<PatientLab> | null>(null)
   const [savedHistory, setSavedHistory] = useState<Partial<PatientProfile> | null>(null)
+  const [showHistory,  setShowHistory]  = useState(false)
   const lastV = patient.visits[patient.visits.length - 1]
   const hasComorbidities = Object.values(patient.comorbidities).some(Boolean)
   const visitCount = patient.visits.length
   const apptCount  = patient.doctorRecords?.filter(r => r.nextApptDate).length ?? 0
 
-  // ผู้ป่วยใหม่ = ยังไม่มีประวัติซักในระบบ
   const needsHistory = !patient.profile && userRole === 'nurse'
 
   const recordedToday = lastV ? isToday(lastV.date) : false
@@ -908,18 +1001,28 @@ export default function PatientDetailPage({
       {/* ประวัติและข้อมูลสำคัญ — ให้แพทย์เห็นมากกว่าแค่ค่าความดัน */}
       <PatientHistoryCard patient={savedHistory ? { ...patient, profile: { ...patient.profile, ...savedHistory } } : patient} />
 
-      {/* ฟอร์มซักประวัติ — แสดงอัตโนมัติสำหรับพยาบาลเมื่อผู้ป่วยยังไม่มีประวัติ */}
-      {userRole === 'nurse' && (needsHistory || (!needsHistory && !savedHistory)) && (
+      {/* ฟอร์มซักประวัติ — กดปุ่มแก้ไขเพื่อเปิด */}
+      {userRole === 'nurse' && (
         <div style={{ marginBottom: 16 }}>
-          {!needsHistory && (
-            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>ต้องการแก้ไขหรือเพิ่มประวัติผู้ป่วย?</span>
-            </div>
+          {!showHistory ? (
+            <button
+              onClick={() => setShowHistory(true)}
+              style={{
+                width: '100%', padding: '10px 16px', borderRadius: 'var(--rs)', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                background: needsHistory ? 'rgba(59,130,246,.06)' : 'var(--bg3)',
+                border: `1.5px solid ${needsHistory ? 'rgba(59,130,246,.3)' : 'var(--border2)'}`,
+                color: needsHistory ? '#1d4ed8' : 'var(--text2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+              <span>{needsHistory ? '⚠ ผู้ป่วยใหม่ — กรอกประวัติก่อนบันทึกความดัน' : '✏ แก้ไขประวัติผู้ป่วย'}</span>
+              <span style={{ fontSize: 11 }}>คลิกเพื่อเปิด ▼</span>
+            </button>
+          ) : (
+            <HistoryEntrySection
+              patient={patient}
+              onSaved={profile => { setSavedHistory(profile); setShowHistory(false) }}
+            />
           )}
-          <HistoryEntrySection
-            patient={patient}
-            onSaved={profile => setSavedHistory(profile)}
-          />
         </div>
       )}
 
@@ -968,7 +1071,8 @@ export default function PatientDetailPage({
       </div>
       {userRole === 'medtech'
         ? <LabEntrySection patient={patient} onLabSaved={setSavedLabs} />
-        : <BPSection patient={patient} doctorName={doctorName} userRole={userRole} onNewVisit={setNewVisit} />
+        : <BPSection patient={patient} doctorName={doctorName} userRole={userRole}
+            onNewVisit={(v, hbpm) => { setNewVisit(v); setNewHbpm(hbpm) }} />
       }
 
       <div className={styles.divider} />
@@ -1000,7 +1104,9 @@ export default function PatientDetailPage({
       <div className={styles.btnRow}>
         <button className={styles.btnS} onClick={onBack}>← กลับ</button>
         {userRole === 'doctor' ? (
-          <button className={styles.btnP} onClick={() => onNext(newVisit)}>ดู BP Trend →</button>
+          <button className={styles.btnP} onClick={() => onNext(newVisit, newHbpm)}>
+            {newHbpm && newVisit && newHbpm.sbp > newVisit.sbp ? 'วิเคราะห์ความเสี่ยง + ยา →' : 'ดู BP Trend →'}
+          </button>
         ) : userRole === 'nurse' ? (
           <button className={styles.btnP} style={{ opacity: nurseReady ? 1 : 0.5, minWidth: 180 }}
             onClick={() => nurseReady ? onFinish?.(newVisit) : undefined} disabled={!nurseReady}
