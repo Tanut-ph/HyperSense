@@ -621,7 +621,7 @@ function BPSection({
   patient: CardioPatient
   doctorName: string
   userRole: UserRole
-  onNewVisit: (v: BPVisit | null, hbpm?: { sbp: number; dbp: number }) => void
+  onNewVisit: (v: BPVisit | null) => void
 }) {
   const lastVisit     = patient.visits[patient.visits.length - 1]
   const recordedToday = lastVisit ? isToday(lastVisit.date) : false
@@ -636,15 +636,10 @@ function BPSection({
   const [o2sat,  setO2sat]  = useState(recordedToday && lastVisit.o2sat ? String(lastVisit.o2sat) : '')
   const [temp,   setTemp]   = useState(recordedToday && lastVisit.temp ? String(lastVisit.temp) : '')
   const [note,   setNote]   = useState('')
-  // HBPM (doctor only — ไม่บันทึก Supabase)
-  const [useHbpm,  setUseHbpm]  = useState(false)
-  const [hbpmSbp,  setHbpmSbp]  = useState('')
-  const [hbpmDbp,  setHbpmDbp]  = useState('')
   const [err,    setErr]    = useState('')
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
   const [dbStatus, setDbStatus] = useState<'idle'|'ok'|'warn'>('idle')
-  const [savedHbpm, setSavedHbpm] = useState<{ sbp: number; dbp: number } | undefined>()
 
   // BMI preview: คำนวณเมื่อใส่ทั้งน้ำหนักและส่วนสูง
   const wtNum = parseFloat(wt), htNum = parseFloat(ht)
@@ -678,16 +673,11 @@ function BPSection({
       // อัปเดตส่วนสูงใน patient_history เมื่อกรอกใหม่
       if (htNum > 0) await savePatientHistory(patient.dbId, { heightCm: htNum })
     }
-    const hbpm = useHbpm && hbpmSbp && hbpmDbp
-      ? { sbp: parseInt(hbpmSbp), dbp: parseInt(hbpmDbp) }
-      : undefined
-    setSavedHbpm(hbpm)
-    setSaving(false); onNewVisit(newVisit, hbpm); setSaved(true)
+    setSaving(false); onNewVisit(newVisit); setSaved(true)
   }
 
   if (saved) {
     const s = parseInt(sbp), d = parseInt(dbp), h = parseInt(hr)
-    const hbpmHigher = savedHbpm && savedHbpm.sbp > s
     return (
       <div style={{ background: 'rgba(0,184,148,.04)', border: '1.5px solid rgba(0,168,114,.25)', borderRadius: 'var(--r)', padding: '18px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
@@ -701,7 +691,7 @@ function BPSection({
           </button>
         </div>
         {/* ตาราง summary */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8, marginBottom: savedHbpm ? 12 : 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8 }}>
           {[
             ['SBP', s, 'mmHg', s > 140], ['DBP', d, 'mmHg', d > 90], ['HR', h, 'bpm', h < 55],
             ['น้ำหนัก', parseFloat(wt) || lastVisit?.weight || 0, 'kg', false],
@@ -713,18 +703,6 @@ function BPSection({
             </div>
           ))}
         </div>
-        {/* HBPM comparison */}
-        {savedHbpm && (
-          <div style={{ padding: '10px 14px', borderRadius: 'var(--rs)', background: hbpmHigher ? 'rgba(220,38,38,.06)' : 'rgba(0,168,114,.06)', border: `1.5px solid ${hbpmHigher ? 'rgba(220,38,38,.3)' : 'rgba(0,168,114,.3)'}`, fontSize: 13 }}>
-            <strong>เปรียบเทียบ HBPM:</strong>
-            <span style={{ fontFamily: 'var(--mono)', marginLeft: 10 }}>
-              Clinic <strong style={{ color: s > 140 ? '#dc2626' : 'var(--accent)' }}>{s}/{d}</strong>
-              {' vs '}
-              HBPM <strong style={{ color: savedHbpm.sbp > 140 ? '#dc2626' : 'var(--accent)' }}>{savedHbpm.sbp}/{savedHbpm.dbp}</strong>
-            </span>
-            {hbpmHigher && <span style={{ marginLeft: 10, color: '#dc2626', fontWeight: 700 }}>⚠ HBPM สูงกว่า → ระบบจะข้ามไปหน้าวิเคราะห์ยาโดยตรง</span>}
-          </div>
-        )}
         <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text3)' }}>กด <strong>แก้ไขค่าความดัน</strong> หากต้องการปรับค่าที่บันทึก</div>
       </div>
     )
@@ -764,7 +742,7 @@ function BPSection({
 
       {/* ── Clinic BP + vitals ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-        {useHbpm ? 'ความดัน Clinic (บันทึกลงระบบ)' : 'ความดันโลหิต + สัญญาณชีพ'}
+        ความดันโลหิต + สัญญาณชีพ
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginBottom: 10 }}>
         {[
@@ -804,50 +782,6 @@ function BPSection({
           </div>
         ))}
       </div>
-
-      {/* ── HBPM (doctor only) ── */}
-      {userRole === 'doctor' && (
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: useHbpm ? '#dc2626' : 'var(--text2)', marginBottom: useHbpm ? 10 : 0 }}>
-            <input type="checkbox" checked={useHbpm} onChange={e => setUseHbpm(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#dc2626' }} />
-            วัดค่า HBPM (ความดันที่บ้าน) ด้วย
-            <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text3)' }}>— ไม่บันทึกลง Supabase</span>
-          </label>
-          {useHbpm && (
-            <div style={{ background: 'rgba(220,38,38,.04)', border: '1.5px solid rgba(220,38,38,.2)', borderRadius: 'var(--rs)', padding: '12px 14px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>ค่าความดัน HBPM (ไม่บันทึกลงระบบ)</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'end' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>SBP HBPM (mmHg)</label>
-                  <input type="number" min="0" value={hbpmSbp} onChange={e => setHbpmSbp(nn(e.target.value))} placeholder="120"
-                    style={{ width: '100%', padding: '10px 12px', background: '#fff', border: '1.5px solid rgba(220,38,38,.3)', borderRadius: 'var(--rs)', fontFamily: 'var(--mono)', fontSize: 15, outline: 'none', boxSizing: 'border-box', color: '#dc2626' }}
-                    onFocus={e => e.target.style.borderColor = '#dc2626'} onBlur={e => e.target.style.borderColor = 'rgba(220,38,38,.3)'} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>DBP HBPM (mmHg)</label>
-                  <input type="number" min="0" value={hbpmDbp} onChange={e => setHbpmDbp(nn(e.target.value))} placeholder="80"
-                    style={{ width: '100%', padding: '10px 12px', background: '#fff', border: '1.5px solid rgba(220,38,38,.3)', borderRadius: 'var(--rs)', fontFamily: 'var(--mono)', fontSize: 15, outline: 'none', boxSizing: 'border-box', color: '#dc2626' }}
-                    onFocus={e => e.target.style.borderColor = '#dc2626'} onBlur={e => e.target.style.borderColor = 'rgba(220,38,38,.3)'} />
-                </div>
-                {/* preview เปรียบเทียบ live */}
-                {sbp && hbpmSbp && (
-                  <div style={{ padding: '10px 12px', borderRadius: 'var(--rs)', background: parseInt(hbpmSbp) > parseInt(sbp) ? 'rgba(220,38,38,.08)' : 'rgba(0,168,114,.08)', border: `1px solid ${parseInt(hbpmSbp) > parseInt(sbp) ? 'rgba(220,38,38,.3)' : 'rgba(0,168,114,.3)'}`, textAlign: 'center', fontSize: 12 }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>
-                      {parseInt(hbpmSbp) > parseInt(sbp) ? '▲ HBPM สูงกว่า' : '▼ HBPM ต่ำกว่า'}
-                    </div>
-                    <div style={{ color: 'var(--text3)', fontSize: 10, marginTop: 2 }}>
-                      Clinic {sbp} vs HBPM {hbpmSbp}
-                    </div>
-                    {parseInt(hbpmSbp) > parseInt(sbp) && (
-                      <div style={{ fontSize: 10, color: '#dc2626', marginTop: 4 }}>จะข้ามไปหน้าวิเคราะห์ยาโดยตรง</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       <div style={{ marginBottom: 12 }}>
         <label style={{ display: 'block', fontSize: 11, color: 'var(--text2)', marginBottom: 5, fontWeight: 600 }}>หมายเหตุการกรอกความดัน (ถ้ามี)</label>
@@ -950,11 +884,10 @@ export default function PatientDetailPage({
   doctorName: string
   userRole: UserRole
   onBack: () => void
-  onNext: (newVisit: BPVisit | null, hbpm?: { sbp: number; dbp: number }) => void
+  onNext: (newVisit: BPVisit | null) => void
   onFinish?: (newVisit: BPVisit | null) => void
 }) {
   const [newVisit,     setNewVisit]     = useState<BPVisit | null>(null)
-  const [newHbpm,      setNewHbpm]      = useState<{ sbp: number; dbp: number } | undefined>()
   const [savedLabs,    setSavedLabs]    = useState<Partial<PatientLab> | null>(null)
   const [savedHistory, setSavedHistory] = useState<Partial<PatientProfile> | null>(null)
   const [showHistory,  setShowHistory]  = useState(false)
@@ -1072,7 +1005,7 @@ export default function PatientDetailPage({
       {userRole === 'medtech'
         ? <LabEntrySection patient={patient} onLabSaved={setSavedLabs} />
         : <BPSection patient={patient} doctorName={doctorName} userRole={userRole}
-            onNewVisit={(v, hbpm) => { setNewVisit(v); setNewHbpm(hbpm) }} />
+            onNewVisit={(v) => setNewVisit(v)} />
       }
 
       <div className={styles.divider} />
@@ -1104,8 +1037,8 @@ export default function PatientDetailPage({
       <div className={styles.btnRow}>
         <button className={styles.btnS} onClick={onBack}>← กลับ</button>
         {userRole === 'doctor' ? (
-          <button className={styles.btnP} onClick={() => onNext(newVisit, newHbpm)}>
-            {newHbpm && newVisit && newHbpm.sbp > newVisit.sbp ? 'วิเคราะห์ความเสี่ยง + ยา →' : 'ดู BP Trend →'}
+          <button className={styles.btnP} onClick={() => onNext(newVisit)}>
+            ดู BP Trend →
           </button>
         ) : userRole === 'nurse' ? (
           <button className={styles.btnP} style={{ opacity: nurseReady ? 1 : 0.5, minWidth: 180 }}

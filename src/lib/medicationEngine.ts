@@ -1,4 +1,39 @@
-import type { CardioPatient, RiskResult, MedRecommendation, FeatureImportance } from './types'
+import type { CardioPatient, RiskResult, MedRecommendation, FeatureImportance, Medication, DrugClass } from './types'
+
+/**
+ * ตรวจคู่ยาที่ห้ามใช้ร่วมกัน / ต้องระวังเมื่อใช้ร่วมกัน
+ * อ้างอิงแนวทางความดันโลหิตสูง (หลีกเลี่ยงการกด RAAS ซ้ำซ้อน ฯลฯ)
+ */
+export function checkDrugInteractions(medications: Medication[]): string[] {
+  const warnings: string[] = []
+  const has = (c: DrugClass) => medications.some(m => m.drugClass === c)
+
+  // ห้ามกด RAAS ซ้ำซ้อน — เสี่ยง hyperkalemia, ไตวายเฉียบพลัน, ความดันต่ำ
+  if (has('ACEI') && has('ARB')) {
+    warnings.push('⛔ ห้ามใช้ร่วม: ACEI + ARB — กด RAAS ซ้ำซ้อน เสี่ยง hyperkalemia และไตวายเฉียบพลัน')
+  }
+  // ARNI มี ARB (valsartan) อยู่แล้ว — ห้ามใช้ร่วมกับ ARB/ACEI
+  if (has('ARNI') && has('ARB')) {
+    warnings.push('⛔ ห้ามใช้ร่วม: ARNI + ARB — ARNI มี ARB อยู่ในตัวแล้ว ถือเป็นการใช้ซ้ำซ้อน')
+  }
+  if (has('ARNI') && has('ACEI')) {
+    warnings.push('⛔ ห้ามใช้ร่วม: ARNI + ACEI — เสี่ยง angioedema รุนแรง ต้องเว้นอย่างน้อย 36 ชม. หลังหยุด ACEI')
+  }
+  // เบต้าซ้ำซ้อน
+  if (has('Beta-blocker') && has('Alpha-Beta-blocker')) {
+    warnings.push('⛔ ห้ามใช้ร่วม: Beta-blocker + Alpha-Beta-blocker — ออกฤทธิ์เบต้าซ้ำซ้อน เสี่ยงหัวใจเต้นช้า')
+  }
+  // ต้องระวัง — non-DHP CCB ร่วมกับยากลุ่มเบต้า
+  if (has('CCB') && (has('Beta-blocker') || has('Alpha-Beta-blocker'))) {
+    warnings.push('⚠ ระวังเมื่อใช้ร่วม: CCB (กลุ่ม non-DHP เช่น verapamil/diltiazem) + Beta-blocker — เสี่ยง bradycardia / AV block')
+  }
+  // Alpha2-Agonist ร่วมกับเบต้า — เสี่ยง rebound HT เมื่อหยุดยา
+  if (has('Alpha2-Agonist') && (has('Beta-blocker') || has('Alpha-Beta-blocker'))) {
+    warnings.push('⚠ ระวังเมื่อใช้ร่วม: Alpha2-Agonist + Beta-blocker — เสี่ยงหัวใจเต้นช้า และ rebound hypertension เมื่อหยุดยากะทันหัน')
+  }
+
+  return warnings
+}
 
 export function getMedicationRecommendation(
   patient: CardioPatient,
@@ -8,6 +43,7 @@ export function getMedicationRecommendation(
   const { comorbidities, labs, bpTarget, age } = patient
   const reasons: string[] = []
   const warnings: string[] = []
+  const interactionWarnings = checkDrugInteractions(patient.medications)
 
   // ── Safety override: REDUCE ───────────────────────────────────────────
   const hypotension = lastSBP < 100 || lastDBP < 62
@@ -34,6 +70,7 @@ export function getMedicationRecommendation(
         'ควรพิจารณาลดหรือหยุดยาที่ทำให้ความดันต่ำ',
         'ติดตามอาการวิงเวียน หน้ามืด ใจสั่น',
         ...warnings,
+        ...interactionWarnings,
       ],
       featureImportance: fi,
     }
@@ -59,6 +96,7 @@ export function getMedicationRecommendation(
         'เน้นปรับพฤติกรรม: ลดเค็ม (โซเดียม < 2 g/วัน), ออกกำลังกาย 150 นาที/สัปดาห์',
         'งดบุหรี่ จำกัดแอลกอฮอล์ และควบคุมน้ำหนัก',
         'วัดความดันที่บ้านสม่ำเสมอ และติดตามตามนัด',
+        ...interactionWarnings,
       ],
       featureImportance: [
         { factor: `SBP เฉลี่ย ${avgSBP} mmHg`, impact: 88, direction: 'positive' },
@@ -115,7 +153,7 @@ export function getMedicationRecommendation(
       title: 'พิจารณาเพิ่มความเข้มข้นของการรักษา',
       thai: 'เพิ่มโดสยา',
       reasons,
-      safetyWarnings: warnings,
+      safetyWarnings: [...warnings, ...interactionWarnings],
       featureImportance: fi,
     }
   }
@@ -135,7 +173,7 @@ export function getMedicationRecommendation(
       title: improving ? 'อาการดีขึ้น — คงแผนยาเดิมและติดตามตามนัด' : 'คงแผนยาเดิมและติดตามตามนัด',
       thai: improving ? 'ดีขึ้น / คงยาเดิม' : 'คงยาเดิม',
       reasons,
-      safetyWarnings: [],
+      safetyWarnings: [...interactionWarnings],
       featureImportance: [
         { factor: `SBP เฉลี่ย ${avgSBP} mmHg`, impact: 88, direction: 'positive' },
         { factor: `BP Variability ${bpVariability}`, impact: 72, direction: 'positive' },
@@ -155,7 +193,7 @@ export function getMedicationRecommendation(
     title: 'ติดตามอาการและค่าความดันอย่างใกล้ชิด',
     thai: 'ติดตามใกล้ชิด',
     reasons,
-    safetyWarnings: [],
+    safetyWarnings: [...interactionWarnings],
     featureImportance: [
       { factor: `SBP เฉลี่ย ${avgSBP} mmHg`, impact: 62, direction: 'negative' },
       { factor: `BP Variability ${bpVariability}`, impact: 50, direction: 'negative' },

@@ -50,17 +50,17 @@ export default function Home() {
   const handleLogout = () => {
     setLoggedIn(false); setDoctorName(''); setStep(1); setUserRole('doctor')
     setBasePatient(null); setNewBPVisit(null); setNewLabs(null)
-    setRiskResult(null); setMedRec(null); setRoleDone(false)
+    setRiskResult(null); setMedRec(null); setRoleDone(false);
   }
 
   const handlePatientFound = (p: CardioPatient) => {
     setBasePatient(p); setNewBPVisit(null); setNewLabs(null)
-    setRiskResult(null); setMedRec(null); setRoleDone(false)
+    setRiskResult(null); setMedRec(null); setRoleDone(false);
     go(3)
   }
 
-  // แพทย์: ไปต่อ BP Trend (หรือข้ามไปวิเคราะห์ยาหาก HBPM > Clinic)
-  const handlePatientNext = (newVisit: BPVisit | null, hbpm?: { sbp: number; dbp: number }) => {
+  // แพทย์: ไปต่อ BP Trend
+  const handlePatientNext = (newVisit: BPVisit | null) => {
     setNewBPVisit(newVisit)
     let patient: CardioPatient = basePatient!
     if (newVisit) patient = { ...patient, visits: [...patient.visits, newVisit] }
@@ -68,12 +68,7 @@ export default function Home() {
     const risk = calculateRisk(patient)
     const rec  = getMedicationRecommendation(patient, risk)
     setRiskResult(risk); setMedRec(rec)
-    // ถ้ามี HBPM และ HBPM SBP สูงกว่า Clinic → ข้ามหน้า BP Trend ไปหน้าวิเคราะห์ยาเลย
-    if (hbpm && newVisit && hbpm.sbp > newVisit.sbp) {
-      go(5)
-    } else {
-      go(4)
-    }
+    go(4)
   }
 
   // พยาบาล/เทคนิคการแพทย์: กรอกข้อมูลของตัวเองเสร็จ → จบ
@@ -85,7 +80,7 @@ export default function Home() {
 
   const handleHome = () => {
     setBasePatient(null); setNewBPVisit(null); setNewLabs(null)
-    setRiskResult(null);  setMedRec(null); setRoleDone(false)
+    setRiskResult(null);  setMedRec(null); setRoleDone(false);
     go(2)
   }
 
@@ -136,7 +131,7 @@ export default function Home() {
           doctorName={doctorName}
           userRole={userRole}
           onBack={() => go(2)}
-          onNext={(v, hbpm) => handlePatientNext(v, hbpm)}
+          onNext={(v) => handlePatientNext(v)}
           onFinish={handleFinishRole}
         />
       )}
