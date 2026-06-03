@@ -240,9 +240,16 @@ INSERT INTO patient_history
   ('a1000000-0000-0000-0000-000000000008',  6, NULL, NULL, 'เบาหวานชนิดที่ 2', 2562, 7, NULL,  175, 98,  true,  'current', 20, 0, NULL, 'heavy',      false, NULL, 'กินยาไม่สม่ำเสมอ ดื่มหนัก — ความดันแกว่งตามพฤติกรรม'),
   ('a1000000-0000-0000-0000-000000000009',  1, 0,    NULL, NULL, NULL, NULL, NULL,                 160, NULL, false, 'never',    0, 0, NULL, 'never',      true,  NULL, 'ตั้งครรภ์ 24 สัปดาห์ — ห้ามใช้ ACEI/ARB/ARNI ใช้ Methyldopa/Labetalol/Nifedipine');
 
--- ── ตัวอย่างประวัติแพ้ยา (demo) ──
-UPDATE patient_history SET drug_allergies = 'ACEI (ไอแห้ง), Penicillin' WHERE patient_id = 'a1000000-0000-0000-0000-000000000001';
-UPDATE patient_history SET drug_allergies = 'Sulfa (ผื่นลมพิษ)'         WHERE patient_id = 'a1000000-0000-0000-0000-000000000003';
+-- ── ประวัติการแพ้ยา ──
+UPDATE patient_history SET drug_allergies = 'ACEI'               WHERE patient_id = 'a1000000-0000-0000-0000-000000000001';
+UPDATE patient_history SET drug_allergies = 'ปฏิเสธการแพ้ยา'      WHERE patient_id = 'a1000000-0000-0000-0000-000000000002';
+UPDATE patient_history SET drug_allergies = 'Diuretic'           WHERE patient_id = 'a1000000-0000-0000-0000-000000000003';
+UPDATE patient_history SET drug_allergies = 'ปฏิเสธการแพ้ยา'      WHERE patient_id = 'a1000000-0000-0000-0000-000000000004';
+UPDATE patient_history SET drug_allergies = 'Beta-blocker'       WHERE patient_id = 'a1000000-0000-0000-0000-000000000005';
+UPDATE patient_history SET drug_allergies = 'ปฏิเสธการแพ้ยา'      WHERE patient_id = 'a1000000-0000-0000-0000-000000000006';
+UPDATE patient_history SET drug_allergies = NULL                 WHERE patient_id = 'a1000000-0000-0000-0000-000000000007';
+UPDATE patient_history SET drug_allergies = 'CCB'                WHERE patient_id = 'a1000000-0000-0000-0000-000000000008';
+UPDATE patient_history SET drug_allergies = 'ARB, ARNI'          WHERE patient_id = 'a1000000-0000-0000-0000-000000000009';
 
 -- ── โรคร่วม ──
 INSERT INTO patient_comorbidities

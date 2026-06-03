@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import type { CardioPatient, BPVisit, UserRole, PatientLab, DoctorRecord, PatientProfile, SmokingStatus, AlcoholStatus } from '@/lib/types'
+import type { CardioPatient, BPVisit, UserRole, PatientLab, DoctorRecord, PatientProfile, SmokingStatus, AlcoholStatus, DrugClass } from '@/lib/types'
 import { saveVisit, saveLab, savePatientHistory, hasSupabaseEnv } from '@/lib/supabaseData'
 
 import { drugColor, drugLabel } from '@/lib/medicationGuide'
@@ -8,6 +8,13 @@ import styles from './HyperSense.module.css'
 
 /** คืน string ที่ clamp ไม่ให้ติดลบ (ใช้กับ onChange ของ type="number" ทุกช่อง) */
 const nn = (v: string) => v === '' ? '' : String(Math.max(0, Number(v)))
+
+/** กลุ่มยาความดันทั้งหมด — ใช้ให้เลือกตอนระบุการแพ้ยา */
+const DRUG_CLASSES: DrugClass[] = [
+  'Diuretic', 'ACEI', 'ARB', 'CCB', 'Beta-blocker',
+  'Alpha-blocker', 'Alpha2-Agonist', 'ARNI', 'Alpha-Beta-blocker', 'Direct-Vasodilator',
+]
+const NO_ALLERGY = 'ปฏิเสธการแพ้ยา'
 
 function isToday(dateStr: string) {
   const t = new Date(); const d = new Date(dateStr)
@@ -169,7 +176,22 @@ function HistoryEntrySection({
   const [alcohol,       setAlcohol]       = useState<AlcoholStatus>(existing?.alcohol ?? 'never')
   const [pregnant,      setPregnant]      = useState(existing?.pregnant ?? false)
   const [recentSurgery, setRecentSurgery] = useState(existing?.recentSurgery ?? '')
-  const [drugAllergies, setDrugAllergies] = useState(existing?.drugAllergies ?? '')
+  // แพ้ยา: เลือกกลุ่มยาที่แพ้ (หลายตัวได้) หรือกด "ปฏิเสธการแพ้ยา"
+  const [noAllergy, setNoAllergy] = useState(existing?.drugAllergies === NO_ALLERGY)
+  const [allergyClasses, setAllergyClasses] = useState<Set<DrugClass>>(() => {
+    const raw = existing?.drugAllergies
+    if (!raw || raw === NO_ALLERGY) return new Set()
+    return new Set(DRUG_CLASSES.filter(c => raw.includes(c)))
+  })
+  const drugAllergies = noAllergy ? NO_ALLERGY : Array.from(allergyClasses).join(', ')
+  const toggleAllergy = (c: DrugClass) => {
+    setNoAllergy(false)
+    setAllergyClasses(prev => {
+      const next = new Set(prev)
+      next.has(c) ? next.delete(c) : next.add(c)
+      return next
+    })
+  }
   const [importantNotes,setImportantNotes]= useState(existing?.importantNotes ?? '')
   // เบาหวาน
   const [dmType,        setDmType]        = useState(existing?.dmType ?? '')
@@ -433,13 +455,34 @@ function HistoryEntrySection({
         </>
       )}
 
-      {/* แพ้ยา */}
+      {/* แพ้ยา — เลือกกลุ่มยาที่แพ้ (กดเลือกได้หลายตัว) */}
       <div style={{ marginBottom: 14 }}>
-        {lbl('ประวัติการแพ้ยา')}
-        <input type="text" value={drugAllergies} onChange={e => setDrugAllergies(e.target.value)}
-          placeholder="เช่น Penicillin, Sulfa, ACEI (ไอแห้ง) — เว้นว่างถ้าไม่มี"
-          style={{ width: '100%', padding: '9px 11px', background: '#fff', border: `1.5px solid ${drugAllergies ? 'rgba(220,38,38,.4)' : 'var(--border2)'}`, borderRadius: 'var(--rs)', color: drugAllergies ? '#dc2626' : 'var(--text)', fontSize: 13, fontWeight: drugAllergies ? 600 : 400, outline: 'none', boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = '#dc2626'} onBlur={e => e.target.style.borderColor = drugAllergies ? 'rgba(220,38,38,.4)' : ''} />
+        {lbl('ประวัติการแพ้ยา (เลือกกลุ่มยาที่แพ้)')}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+          {DRUG_CLASSES.map(c => {
+            const on = allergyClasses.has(c)
+            return (
+              <button key={c} type="button" onClick={() => toggleAllergy(c)}
+                style={{
+                  padding: '6px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                  background: on ? 'rgba(220,38,38,.1)' : 'var(--bg3)',
+                  border: `1.5px solid ${on ? 'rgba(220,38,38,.45)' : 'var(--border2)'}`,
+                  color: on ? '#dc2626' : 'var(--text2)',
+                }}>
+                {on ? '⚠ ' : ''}{c}
+              </button>
+            )
+          })}
+        </div>
+        <button type="button" onClick={() => { setNoAllergy(v => !v); setAllergyClasses(new Set()) }}
+          style={{
+            padding: '6px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            background: noAllergy ? 'rgba(0,168,114,.1)' : 'var(--bg3)',
+            border: `1.5px solid ${noAllergy ? 'rgba(0,168,114,.4)' : 'var(--border2)'}`,
+            color: noAllergy ? '#007d60' : 'var(--text2)',
+          }}>
+          {noAllergy ? '✓ ' : ''}{NO_ALLERGY}
+        </button>
       </div>
 
       {/* หมายเหตุสำคัญ */}

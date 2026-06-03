@@ -35,6 +35,49 @@ export function checkDrugInteractions(medications: Medication[]): string[] {
   return warnings
 }
 
+/**
+ * คำที่ใช้จับว่าผู้ป่วยแพ้ยากลุ่มใด จากข้อความแพ้ยา (free text)
+ */
+const ALLERGY_KEYWORDS: { cls: DrugClass; words: string[] }[] = [
+  { cls: 'ACEI',               words: ['acei', 'ace inhibitor', 'enalapril', 'lisinopril', 'ramipril', 'captopril', 'perindopril', 'pril'] },
+  { cls: 'ARB',                words: ['arb', 'losartan', 'valsartan', 'candesartan', 'irbesartan', 'olmesartan', 'telmisartan', 'sartan'] },
+  { cls: 'ARNI',               words: ['arni', 'sacubitril', 'entresto', 'neprilysin'] },
+  { cls: 'CCB',                words: ['ccb', 'amlodipine', 'felodipine', 'nifedipine', 'diltiazem', 'verapamil', 'calcium channel'] },
+  { cls: 'Beta-blocker',       words: ['beta-blocker', 'beta blocker', 'betablocker', 'atenolol', 'metoprolol', 'bisoprolol', 'propranolol', 'olol'] },
+  { cls: 'Alpha-blocker',      words: ['alpha-blocker', 'alpha blocker', 'doxazosin', 'prazosin', 'terazosin'] },
+  { cls: 'Alpha2-Agonist',     words: ['alpha2', 'methyldopa', 'clonidine'] },
+  { cls: 'Alpha-Beta-blocker', words: ['carvedilol', 'labetalol'] },
+  { cls: 'Diuretic',           words: ['diuretic', 'ขับปัสสาวะ', 'hydrochlorothiazide', 'hctz', 'furosemide', 'thiazide', 'indapamide', 'spironolactone'] },
+  { cls: 'Direct-Vasodilator', words: ['hydralazine', 'minoxidil'] },
+]
+
+/**
+ * ตรวจว่ายาที่ผู้ป่วยใช้อยู่ชนกับประวัติแพ้ยาหรือไม่ → ห้ามใช้
+ */
+export function checkAllergyConflicts(patient: CardioPatient): string[] {
+  const raw = patient.profile?.drugAllergies
+  if (!raw) return []
+  const text = raw.toLowerCase()
+  // ข้ามกรณี "ปฏิเสธการแพ้ยา" / "ไม่มี"
+  if (/ปฏิเสธ|ไม่มี|none|nkda|ยังไม่ได้ซัก/.test(text)) return []
+
+  const warnings: string[] = []
+  const allergicClasses = new Set<DrugClass>()
+  for (const { cls, words } of ALLERGY_KEYWORDS) {
+    if (words.some(w => text.includes(w))) allergicClasses.add(cls)
+  }
+
+  for (const cls of allergicClasses) {
+    const inUse = patient.medications.some(m => m.drugClass === cls)
+    if (inUse) {
+      warnings.push(`⛔ ผู้ป่วยแพ้ยากลุ่ม ${cls} แต่กำลังใช้ยากลุ่มนี้อยู่ — ต้องหยุด/เปลี่ยนยาทันที (ห้ามใช้)`)
+    } else {
+      warnings.push(`⛔ ห้ามสั่งยากลุ่ม ${cls} — ผู้ป่วยมีประวัติแพ้ยา (${raw})`)
+    }
+  }
+  return warnings
+}
+
 export function getMedicationRecommendation(
   patient: CardioPatient,
   risk: RiskResult,
@@ -43,7 +86,8 @@ export function getMedicationRecommendation(
   const { comorbidities, labs, bpTarget, age } = patient
   const reasons: string[] = []
   const warnings: string[] = []
-  const interactionWarnings = checkDrugInteractions(patient.medications)
+  const allergyWarnings = checkAllergyConflicts(patient)
+  const interactionWarnings = [...allergyWarnings, ...checkDrugInteractions(patient.medications)]
 
   // ── Safety override: REDUCE ───────────────────────────────────────────
   const hypotension = lastSBP < 100 || lastDBP < 62

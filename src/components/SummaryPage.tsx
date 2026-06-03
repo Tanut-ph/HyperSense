@@ -318,6 +318,17 @@ export default function SummaryPage({
       </div>
       <p className={styles.stepDesc}>ตรวจสอบ แก้ไข และบันทึกผลการประเมิน (เฉพาะแพทย์)</p>
 
+      {/* แพ้ยา */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', marginBottom: 14, borderRadius: 'var(--rs)', background: patient.profile?.drugAllergies ? 'rgba(220,38,38,.08)' : 'rgba(0,168,114,.06)', border: `1.5px solid ${patient.profile?.drugAllergies ? 'rgba(220,38,38,.4)' : 'rgba(0,168,114,.25)'}` }}>
+        <span style={{ fontSize: 18, lineHeight: 1 }}>{patient.profile?.drugAllergies ? '⚠' : '✓'}</span>
+        <div style={{ fontSize: 13 }}>
+          <strong style={{ color: patient.profile?.drugAllergies ? '#dc2626' : '#007d60' }}>แพ้ยา ({patient.name}):</strong>{' '}
+          {patient.profile?.drugAllergies
+            ? <span style={{ color: '#dc2626', fontWeight: 700 }}>{patient.profile.drugAllergies}</span>
+            : <span style={{ color: 'var(--text2)' }}>ไม่มีประวัติแพ้ยาที่บันทึกไว้</span>}
+        </div>
+      </div>
+
       {/* Patient Card */}
       <div style={{ background: 'var(--bg2)', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', padding: '18px 20px', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
