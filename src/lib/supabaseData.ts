@@ -49,7 +49,7 @@ interface RawHistory {
   smoking_status: string | null; smoking_years: number | null
   smoking_months: number | null; smoking_days: number | null
   alcohol: string | null; pregnant: boolean | null
-  recent_surgery: string | null; important_notes: string | null
+  recent_surgery: string | null; drug_allergies: string | null; important_notes: string | null
 }
 
 interface RawMedication {
@@ -133,6 +133,7 @@ function mapPatient(row: RawPatient): CardioPatient {
     alcohol: (hr.alcohol as PatientProfile['alcohol']) ?? undefined,
     pregnant: hr.pregnant ?? undefined,
     recentSurgery: hr.recent_surgery ?? undefined,
+    drugAllergies: hr.drug_allergies ?? undefined,
     importantNotes: hr.important_notes ?? undefined,
   } : undefined
 
@@ -275,6 +276,7 @@ export async function savePatientHistory(
       alcohol:           profile.alcohol ?? null,
       pregnant:          profile.pregnant ?? null,
       recent_surgery:    profile.recentSurgery ?? null,
+      drug_allergies:    profile.drugAllergies ?? null,
       important_notes:   profile.importantNotes ?? null,
     }, { onConflict: 'patient_id' })
   if (error) return { success: false, error: error.message }

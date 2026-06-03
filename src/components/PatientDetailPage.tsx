@@ -87,11 +87,22 @@ function PatientHistoryCard({ patient }: { patient: CardioPatient }) {
   if (p?.smokingStatus === 'current') flags.push({ text: 'สูบบุหรี่อยู่', level: 'warn' })
   if (p?.alcohol === 'heavy' || p?.alcohol === 'regular') flags.push({ text: 'ดื่มแอลกอฮอล์ประจำ', level: 'warn' })
 
-  const isEmpty = filled.length === 0 && flags.length === 0 && !p?.importantNotes
+  const isEmpty = filled.length === 0 && flags.length === 0 && !p?.importantNotes && !p?.drugAllergies
 
   return (
     <div style={{ background: 'var(--bg2)', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', padding: '16px 18px', marginBottom: 16 }}>
       <div className={styles.lbl} style={{ marginBottom: 10 }}>ประวัติและข้อมูลสำคัญ (ประกอบการตัดสินใจ)</div>
+
+      {/* แพ้ยา — เด่นชัดสุด */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', marginBottom: 12, borderRadius: 'var(--rs)', background: p?.drugAllergies ? 'rgba(220,38,38,.08)' : 'rgba(0,168,114,.06)', border: `1.5px solid ${p?.drugAllergies ? 'rgba(220,38,38,.4)' : 'rgba(0,168,114,.25)'}` }}>
+        <span style={{ fontSize: 18, lineHeight: 1 }}>{p?.drugAllergies ? '⚠' : '✓'}</span>
+        <div style={{ fontSize: 13 }}>
+          <strong style={{ color: p?.drugAllergies ? '#dc2626' : '#007d60' }}>แพ้ยา:</strong>{' '}
+          {p?.drugAllergies
+            ? <span style={{ color: '#dc2626', fontWeight: 700 }}>{p.drugAllergies}</span>
+            : <span style={{ color: 'var(--text2)' }}>ไม่มีประวัติแพ้ยาที่บันทึกไว้</span>}
+        </div>
+      </div>
 
       {flags.length > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -158,6 +169,7 @@ function HistoryEntrySection({
   const [alcohol,       setAlcohol]       = useState<AlcoholStatus>(existing?.alcohol ?? 'never')
   const [pregnant,      setPregnant]      = useState(existing?.pregnant ?? false)
   const [recentSurgery, setRecentSurgery] = useState(existing?.recentSurgery ?? '')
+  const [drugAllergies, setDrugAllergies] = useState(existing?.drugAllergies ?? '')
   const [importantNotes,setImportantNotes]= useState(existing?.importantNotes ?? '')
   // เบาหวาน
   const [dmType,        setDmType]        = useState(existing?.dmType ?? '')
@@ -180,6 +192,7 @@ function HistoryEntrySection({
     alcohol:          alcohol,
     pregnant:         pregnant || undefined,
     recentSurgery:    recentSurgery.trim() || undefined,
+    drugAllergies:    drugAllergies.trim() || undefined,
     importantNotes:   importantNotes.trim() || undefined,
     dmType:           dmType.trim() || undefined,
     dmDiagnosisYear:  dmDiagYear ? parseInt(dmDiagYear) : undefined,
@@ -221,6 +234,7 @@ function HistoryEntrySection({
     if (smoking === 'current') highlights.push('สูบบุหรี่')
     if (alcohol === 'regular' || alcohol === 'heavy') highlights.push('ดื่มแอลกอฮอล์')
     if (recentSurgery) highlights.push(`ผ่าตัด: ${recentSurgery}`)
+    if (drugAllergies) highlights.push(`แพ้ยา: ${drugAllergies}`)
 
     return (
       <div style={{ background: 'rgba(59,130,246,.04)', border: '1.5px solid rgba(59,130,246,.25)', borderRadius: 'var(--r)', padding: '14px 16px' }}>
@@ -419,11 +433,20 @@ function HistoryEntrySection({
         </>
       )}
 
+      {/* แพ้ยา */}
+      <div style={{ marginBottom: 14 }}>
+        {lbl('ประวัติการแพ้ยา')}
+        <input type="text" value={drugAllergies} onChange={e => setDrugAllergies(e.target.value)}
+          placeholder="เช่น Penicillin, Sulfa, ACEI (ไอแห้ง) — เว้นว่างถ้าไม่มี"
+          style={{ width: '100%', padding: '9px 11px', background: '#fff', border: `1.5px solid ${drugAllergies ? 'rgba(220,38,38,.4)' : 'var(--border2)'}`, borderRadius: 'var(--rs)', color: drugAllergies ? '#dc2626' : 'var(--text)', fontSize: 13, fontWeight: drugAllergies ? 600 : 400, outline: 'none', boxSizing: 'border-box' }}
+          onFocus={e => e.target.style.borderColor = '#dc2626'} onBlur={e => e.target.style.borderColor = drugAllergies ? 'rgba(220,38,38,.4)' : ''} />
+      </div>
+
       {/* หมายเหตุสำคัญ */}
       <div style={{ marginBottom: 14 }}>
         {lbl('หมายเหตุสำคัญอื่นๆ')}
         <textarea value={importantNotes} onChange={e => setImportantNotes(e.target.value)}
-          placeholder="ข้อมูลสำคัญที่แพทย์ควรทราบ เช่น แพ้ยา ประวัติครอบครัว โรคอื่นๆ..."
+          placeholder="ข้อมูลสำคัญที่แพทย์ควรทราบ เช่น ประวัติครอบครัว โรคอื่นๆ..."
           rows={2}
           style={{ width: '100%', padding: '9px 11px', background: '#fff', border: '1.5px solid var(--border2)', borderRadius: 'var(--rs)', color: 'var(--text)', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
           onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = ''} />

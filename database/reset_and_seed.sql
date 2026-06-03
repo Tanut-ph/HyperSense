@@ -77,6 +77,7 @@ CREATE TABLE patient_history (
   alcohol           TEXT CHECK (alcohol IN ('never','occasional','regular','heavy')),
   pregnant          BOOLEAN DEFAULT false,        -- ตั้งครรภ์ (มีผลต่อการเลือกยา)
   recent_surgery    TEXT,                         -- การผ่าตัด/หัตถการ
+  drug_allergies    TEXT,                         -- แพ้ยา
   important_notes   TEXT
 );
 
@@ -238,6 +239,10 @@ INSERT INTO patient_history
   ('a1000000-0000-0000-0000-000000000007',  0, 3,    15,   NULL, NULL, NULL, NULL,                 160, 80,  false, 'never',    0, 0, NULL, 'occasional', false, NULL, 'ผู้ป่วยใหม่ ยังไม่ได้รับยา'),
   ('a1000000-0000-0000-0000-000000000008',  6, NULL, NULL, 'เบาหวานชนิดที่ 2', 2562, 7, NULL,  175, 98,  true,  'current', 20, 0, NULL, 'heavy',      false, NULL, 'กินยาไม่สม่ำเสมอ ดื่มหนัก — ความดันแกว่งตามพฤติกรรม'),
   ('a1000000-0000-0000-0000-000000000009',  1, 0,    NULL, NULL, NULL, NULL, NULL,                 160, NULL, false, 'never',    0, 0, NULL, 'never',      true,  NULL, 'ตั้งครรภ์ 24 สัปดาห์ — ห้ามใช้ ACEI/ARB/ARNI ใช้ Methyldopa/Labetalol/Nifedipine');
+
+-- ── ตัวอย่างประวัติแพ้ยา (demo) ──
+UPDATE patient_history SET drug_allergies = 'ACEI (ไอแห้ง), Penicillin' WHERE patient_id = 'a1000000-0000-0000-0000-000000000001';
+UPDATE patient_history SET drug_allergies = 'Sulfa (ผื่นลมพิษ)'         WHERE patient_id = 'a1000000-0000-0000-0000-000000000003';
 
 -- ── โรคร่วม ──
 INSERT INTO patient_comorbidities

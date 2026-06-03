@@ -129,6 +129,7 @@ export interface PatientProfile {
   alcohol?: AlcoholStatus
   pregnant?: boolean
   recentSurgery?: string
+  drugAllergies?: string      // แพ้ยา — เช่น "Penicillin, Sulfa, ACEI (ไอแห้ง)"
   importantNotes?: string
 }
 
