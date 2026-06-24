@@ -4,6 +4,7 @@
 
 > Stack: Next.js 16 · TypeScript · Supabase (PostgreSQL) · Python FastAPI + XGBoost
 
+hypersense.pages.dev
 ---
 
 ## รันโปรเจกต์
