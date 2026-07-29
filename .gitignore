@@ -15,6 +15,7 @@ ml/__pycache__/
 ml/models/*.joblib
 ml/models/*.pkl
 ml/models/*.bin
+ml/*.xlsx
 
 # Node / Next.js
 node_modules/

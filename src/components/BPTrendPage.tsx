@@ -122,7 +122,7 @@ function BPChart({ patient, risk }: { patient: CardioPatient; risk: RiskResult }
       <text x={padL + 50} y={padT + 14} fontSize={9} fill="#3d6b52">DBP</text>
       <line x1={padL + 82} y1={padT + 10} x2={padL + 96} y2={padT + 10}
         stroke={trendColor} strokeWidth={1.5} strokeDasharray="4,3" />
-      <text x={padL + 100} y={padT + 14} fontSize={9} fill="#3d6b52">Trend (ML)</text>
+      <text x={padL + 100} y={padT + 14} fontSize={9} fill="#3d6b52">Trend (Linear Reg.)</text>
     </svg>
   )
 }
@@ -143,7 +143,7 @@ function TrendInterpretation({ risk, bpTarget, sbps }: { risk: RiskResult; bpTar
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--rs)', padding: '14px' }}>
-        <div className={styles.lbl} style={{ marginBottom: 8 }}>🤖 ML Trend Analysis</div>
+        <div className={styles.lbl} style={{ marginBottom: 8 }}>📊 การวิเคราะห์แนวโน้ม (Linear Regression)</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: trendDesc.color, marginBottom: 6 }}>
           {trendDesc.icon} SBP {trendDesc.label}
         </div>
@@ -188,7 +188,7 @@ export default function BPTrendPage({
     <div>
       <div className={styles.stepHdr}>
         <span className={styles.stepNum}>03 / 05</span>
-        <h1 className={styles.stepTitle}>BP Trend + ML Prediction</h1>
+        <h1 className={styles.stepTitle}>BP Trend + พยากรณ์แนวโน้ม</h1>
       </div>
       <p className={styles.stepDesc}>
         กราฟแนวโน้มความดัน {patient.visits.length} visit + คาดการณ์จาก Linear Regression — {patient.name}
@@ -196,7 +196,7 @@ export default function BPTrendPage({
 
       {/* Chart */}
       <div className={styles.chartWrap}>
-        <div className={styles.chartTitle}>📈 SBP / DBP Timeline พร้อม Trend Line (ML)</div>
+        <div className={styles.chartTitle}>📈 SBP / DBP Timeline พร้อม Trend Line (Linear Regression)</div>
         <BPChart patient={patient} risk={risk} />
 
         {/* BP stat badges */}
@@ -266,8 +266,8 @@ export default function BPTrendPage({
       )}
 
       <div className={styles.aiNote}>
-        🤖 <strong>ML Model:</strong> Linear Regression บน SBP time-series ใช้เพื่อคาดการณ์แนวโน้ม
-        — ในระบบ production จะใช้ XGBoost / LSTM สำหรับ multi-feature prediction
+        📊 <strong>วิธีคำนวณ:</strong> Linear Regression (least squares) บน SBP time-series ของผู้ป่วย
+        ใช้ความชัน (slope) ประมาณแนวโน้มและคาดการณ์ค่าความดันล่วงหน้า
       </div>
 
       <div className={styles.btnRow}>
