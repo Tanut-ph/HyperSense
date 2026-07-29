@@ -31,6 +31,7 @@ pip install -r requirements.txt
 ### 2. Train model
 ```bash
 python train.py --data "path/to/data_dictionary_hypertension_example.xlsx"
+python train.py --data "D:\Work\hackaton\data_dictionary_hypertension_example (1).xlsx"
 ```
 
 ผลลัพธ์จะแสดง CV AUROC ของแต่ละ target:
