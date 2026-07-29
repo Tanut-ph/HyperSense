@@ -1,15 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { fetchPatientByQuery, hasSupabaseEnv } from '@/lib/supabaseData'
-import { findPatientByNationalId }              from '@/lib/mockData'
 import type { CardioPatient } from '@/lib/types'
 import styles from './HyperSense.module.css'
-
-async function searchPatient(query: string): Promise<CardioPatient | null> {
-  if (hasSupabaseEnv) return fetchPatientByQuery(query)
-  return findPatientByNationalId(query)
-}
-
 
 export default function PatientSearchPage({
   onFound, onBack,
@@ -24,19 +17,17 @@ export default function PatientSearchPage({
   const doSearch = async () => {
     const q = query.trim()
     if (!q) { setError('กรุณากรอกรหัสผู้ป่วย (5-7 หลัก)'); return }
+    if (!hasSupabaseEnv) {
+      setError('ยังไม่ได้เชื่อมต่อ Supabase — ตั้งค่า NEXT_PUBLIC_SUPABASE_URL และ NEXT_PUBLIC_SUPABASE_ANON_KEY ใน .env.local')
+      return
+    }
     setLoading(true); setError('')
     try {
-      const found = await searchPatient(q)
-      if (found) { onFound(found) }
-      else {
-        setError(
-          hasSupabaseEnv
-            ? 'ไม่พบผู้ป่วยในฐานข้อมูล — ตรวจสอบรหัสผู้ป่วย'
-            : 'ไม่พบผู้ป่วยใน Demo Data — ลองใช้ตัวอย่างด้านล่าง',
-        )
-      }
+      const found = await fetchPatientByQuery(q)
+      if (found) onFound(found)
+      else setError('ไม่พบผู้ป่วยในฐานข้อมูล — ตรวจสอบรหัสผู้ป่วยอีกครั้ง')
     } catch (err: any) {
-      setError(`เกิดข้อผิดพลาด: ${err.message}`)
+      setError(`เกิดข้อผิดพลาดในการดึงข้อมูล: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -50,11 +41,10 @@ export default function PatientSearchPage({
         <span className={styles.stepNum}>01 / 05</span>
         <h1 className={styles.stepTitle}>ค้นหาผู้ป่วย</h1>
       </div>
-      <p className={styles.stepDesc}>กรอกรหัสผู้ป่วย 5-7 หลัก</p>
+      <p className={styles.stepDesc}>กรอกรหัสผู้ป่วย 5-7 หลัก เพื่อดึงข้อมูลจากฐานข้อมูล</p>
 
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        marginBottom: 16, padding: '8px 14px',
+        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '8px 14px',
         borderRadius: 'var(--rs)', fontSize: 12, fontFamily: 'var(--mono)',
         background: hasSupabaseEnv ? 'rgba(0,184,148,.08)' : 'rgba(243,156,18,.08)',
         border: `1.5px solid ${hasSupabaseEnv ? 'rgba(0,184,148,.3)' : 'rgba(243,156,18,.3)'}`,
@@ -63,8 +53,8 @@ export default function PatientSearchPage({
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: hasSupabaseEnv ? '#00a872' : '#d97706', flexShrink: 0, display: 'inline-block' }} />
         <span>
           {hasSupabaseEnv
-            ? 'เชื่อมต่อ Supabase — ดึงข้อมูลจากฐานข้อมูลจริง'
-            : 'Demo Mode — ตั้งค่า NEXT_PUBLIC_SUPABASE_URL เพื่อเชื่อมต่อจริง'}
+            ? 'เชื่อมต่อ Supabase แล้ว — ดึงข้อมูลจากฐานข้อมูลจริง'
+            : 'ยังไม่ได้เชื่อมต่อ Supabase — ตั้งค่า .env.local ก่อนใช้งาน'}
         </span>
       </div>
 
@@ -78,19 +68,15 @@ export default function PatientSearchPage({
         </label>
         <div style={{ display: 'flex', gap: 10 }}>
           <input
-            type="text"
-            value={query}
+            type="text" value={query}
             onChange={e => { setQuery(e.target.value); setError('') }}
             onKeyDown={handleKey}
             placeholder="เช่น  10001  หรือ  10003"
             maxLength={7}
             style={{
-              flex: 1, padding: '14px 16px',
-              background: 'var(--bg)', border: '1.5px solid var(--border2)',
-              borderRadius: 'var(--rs)', color: 'var(--text)',
-              fontFamily: 'var(--mono)', fontSize: 18, outline: 'none',
-              letterSpacing: '0.1em', minHeight: 52,
-              transition: 'border-color .2s, box-shadow .2s',
+              flex: 1, padding: '14px 16px', background: 'var(--bg)', border: '1.5px solid var(--border2)',
+              borderRadius: 'var(--rs)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 18,
+              outline: 'none', letterSpacing: '0.1em', minHeight: 52, transition: 'border-color .2s, box-shadow .2s',
             }}
             onFocus={e => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 3px rgba(0,168,114,.1)' }}
             onBlur={e => { e.target.style.borderColor = ''; e.target.style.boxShadow = '' }}
@@ -101,11 +87,7 @@ export default function PatientSearchPage({
         </div>
 
         {error && (
-          <div style={{
-            marginTop: 12, padding: '10px 14px',
-            background: 'rgba(220,38,38,.06)', border: '1.5px solid rgba(220,38,38,.25)',
-            borderRadius: 'var(--rs)', fontSize: 13, color: '#dc2626',
-          }}>{error}</div>
+          <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(220,38,38,.06)', border: '1.5px solid rgba(220,38,38,.25)', borderRadius: 'var(--rs)', fontSize: 13, color: '#dc2626' }}>{error}</div>
         )}
 
         <div style={{ marginTop: 14, fontSize: 12, color: 'var(--text3)' }}>

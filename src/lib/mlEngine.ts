@@ -27,6 +27,8 @@ interface APIRiskResult {
   positive:    boolean
   severity:    'low' | 'moderate' | 'high'
   shap_top5:   SHAPEntry[]
+  basis?:      string[]
+  model?:      'xgboost' | 'clinical'
 }
 
 interface APIResponse {
@@ -96,9 +98,11 @@ async function fetchMLPrediction(patient: CardioPatient): Promise<MLRiskPredicti
         condition:   r.condition,
         probability: Math.round(r.probability),
         severity:    r.severity,
-        basis: r.shap_top5.map(s =>
-          `${s.feature} = ${s.value} (${s.direction}, SHAP: ${s.shap > 0 ? '+' : ''}${s.shap.toFixed(3)})`
-        ),
+        // ใช้ SHAP เมื่อมาจากโมเดล XGBoost, ไม่งั้นใช้เหตุผลเชิงคลินิก (basis)
+        basis: (r.shap_top5 && r.shap_top5.length)
+          ? r.shap_top5.map(s =>
+              `${s.feature} = ${s.value} (${s.direction}, SHAP: ${s.shap > 0 ? '+' : ''}${s.shap.toFixed(3)})`)
+          : (r.basis ?? []),
       }))
   } catch {
     return null  // API ไม่พร้อม → fallback

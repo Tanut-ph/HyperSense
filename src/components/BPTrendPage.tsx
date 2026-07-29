@@ -194,6 +194,7 @@ export default function BPTrendPage({
         กราฟแนวโน้มความดัน {patient.visits.length} visit + คาดการณ์จาก Linear Regression — {patient.name}
       </p>
 
+
       {/* Chart */}
       <div className={styles.chartWrap}>
         <div className={styles.chartTitle}>📈 SBP / DBP Timeline พร้อม Trend Line (ML)</div>

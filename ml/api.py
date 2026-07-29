@@ -109,7 +109,9 @@ class RiskResult(BaseModel):
     threshold:   float   # %
     positive:    bool
     severity:    str     # low | moderate | high
-    shap_top5:   List[SHAPEntry]
+    shap_top5:   List[SHAPEntry] = []
+    basis:       List[str] = []   # เหตุผลเชิงคลินิก (เมื่อยังไม่มีโมเดล XGBoost)
+    model:       str = "clinical" # "xgboost" | "clinical"
 
 
 class PredictResponse(BaseModel):
@@ -141,17 +143,11 @@ def model_info():
 
 @app.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest):
-    # ตรวจสอบว่า models พร้อมแล้ว
-    if not (MODEL_DIR / "feature_names.json").exists():
-        raise HTTPException(
-            status_code=503,
-            detail="ML models not ready. Please run: python train.py --data <xlsx_path>",
-        )
-
-    if len(req.visits) < 2:
+    # ไม่ต้องมีโมเดล XGBoost ก็ตอบผลได้ (จะใช้การประเมินเชิงคลินิกแทน)
+    if len(req.visits) < 1:
         raise HTTPException(
             status_code=422,
-            detail="ต้องมีข้อมูล BP อย่างน้อย 2 visits สำหรับการทำนาย",
+            detail="ต้องมีข้อมูล BP อย่างน้อย 1 visit สำหรับการประเมิน",
         )
 
     # แปลง request → feature dict

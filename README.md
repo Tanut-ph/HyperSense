@@ -2,8 +2,9 @@
 
 **ระบบช่วยตัดสินใจทางคลินิก — ความดันโลหิตสูงและความเสี่ยงโรคหัวใจและหลอดเลือด**
 
-> Stack: Next.js 15 · TypeScript · Supabase · Python XGBoost
+> Stack: Next.js 16 · TypeScript · Supabase (PostgreSQL) · Python FastAPI + XGBoost
 
+hypersense.pages.dev
 ---
 
 ## รันโปรเจกต์
@@ -12,99 +13,64 @@
 npm install
 npm run dev
 ```
-
 เปิดเบราว์เซอร์: `http://localhost:3000`
 
----
-
-## Demo Login
-
-| Username | Password | ชื่อ | Role |
-|---|---|---|---|
-| doctor1 | 1234 | นพ. วิชาญ สุขใจ | แพทย์ |
-| doctor2 | 1234 | พญ. สมหญิง รักษาดี | แพทย์ |
-| nurse1 | 1234 | น.ส. พรทิพย์ ใจดี | พยาบาล |
-| medtech1 | 1234 | นาย ชาญณรงค์ วิชาการ | เทคนิคการแพทย์ |
+> ระบบใช้ข้อมูลจาก **Supabase เท่านั้น** — ต้องตั้งค่า `.env.local` และรัน SQL ก่อนใช้งาน (ดูด้านล่าง)
 
 ---
 
-## ขั้นตอนการใช้งาน
+## ตั้งค่า Supabase (จำเป็น)
 
-```
-Login → ค้นหาผู้ป่วย → ข้อมูลผู้ป่วย → BP Trend → ML Risk + ยา → สรุปและบันทึก
-```
+1. สร้างไฟล์ `.env.local`
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   NEXT_PUBLIC_ML_API_URL=http://localhost:8000   # ออปชัน (ML backend)
+   ```
+2. เปิด Supabase → **SQL Editor** → วางไฟล์ [`database/reset_and_seed.sql`](database/reset_and_seed.sql) ทั้งไฟล์ → **Run**
+   (ลบตาราง/ข้อมูลเก่า → สร้างตารางใหม่ → ใส่ข้อมูลตัวอย่าง 9 คน ในครั้งเดียว)
 
-| Step | หน้า | Role ที่ทำได้ |
+---
+
+## Demo Login (รหัสผ่านทุกบัญชี: `1234`)
+
+| Staff ID | ชื่อ | บทบาท |
 |---|---|---|
-| 1 | ค้นหาผู้ป่วย | ทุก Role |
-| 2 | ข้อมูลผู้ป่วย + บันทึกค่า | พยาบาล (BP), เทคนิคการแพทย์ (แลป) |
-| 3 | BP Trend (กราฟ + Linear Regression) | ทุก Role |
-| 4 | ML Risk Analysis + แนะนำยา | ทุก Role |
-| 5 | สรุป + แก้ไขยา + บันทึก | แพทย์ (แก้ไขได้), อื่นๆ (อ่านอย่างเดียว) |
+| DR001 | นพ. วิชาญ สุขใจ | แพทย์ |
+| DR002 | พญ. สมหญิง รักษาดี | แพทย์ |
+| DR003 | นพ. ทวีศักดิ์ มีโชค | แพทย์ |
+| NR001 | น.ส. พรทิพย์ ใจดี | พยาบาล |
+| MT001 | นาย ชาญณรงค์ วิชาการ | เทคนิคการแพทย์ |
+
+ผู้ป่วยตัวอย่าง: `10001`–`10009` (เช่น `10003` เคสเสี่ยงสูง, `10009` หญิงตั้งครรภ์)
 
 ---
 
-## โครงสร้างโปรเจกต์
+## ขั้นตอนการใช้งาน (แยกตามบทบาท)
 
-```
-src/
-├── app/
-│   ├── page.tsx                 ← Main controller (step routing)
-│   ├── layout.tsx
-│   └── globals.css
-├── components/
-│   ├── Header.tsx               ← Logo + user info + logout
-│   ├── LoginPage.tsx            ← Login (role-based)
-│   ├── StepIndicator.tsx        ← Progress bar
-│   ├── PatientSearchPage.tsx    ← Step 1: ค้นหาผู้ป่วย
-│   ├── PatientDetailPage.tsx    ← Step 2: ข้อมูลผู้ป่วย + BP + แลป
-│   ├── BPTrendPage.tsx          ← Step 3: กราฟ BP Trend
-│   ├── RiskMedicationPage.tsx   ← Step 4: ML Risk + แนะนำยา
-│   ├── SummaryPage.tsx          ← Step 5: สรุปและบันทึก
-│   └── HyperSense.module.css   ← Shared styles
-└── lib/
-    ├── supabase.ts              ← Supabase client
-    ├── supabaseData.ts          ← Supabase queries
-    ├── types.ts                 ← TypeScript interfaces
-    ├── mockData.ts              ← Demo patients (fallback)
-    ├── riskEngine.ts            ← Risk Score Calculator
-    ├── medicationEngine.ts      ← Medication Decision Engine
-    └── mlEngine.ts             ← XGBoost API client + fallback
+| บทบาท | ทำอะไร |
+|---|---|
+| **พยาบาล** | ค้นหาผู้ป่วย → กรอก/แก้ไขค่าความดัน + สัญญาณชีพ → เสร็จสิ้น |
+| **เทคนิคการแพทย์** | ค้นหาผู้ป่วย → กรอก/แก้ไขผลแลป → เสร็จสิ้น |
+| **แพทย์** | ค้นหา → ข้อมูล+ประวัติสำคัญ → BP Trend → วิเคราะห์ความเสี่ยง+แนะนำยา → ปรับยา/นัดหมาย → บันทึก |
 
-ml/                              ← Python ML backend (optional)
-├── api.py                       ← FastAPI server
-├── train.py                     ← XGBoost training
-├── predict.py                   ← SHAP explainability
-└── requirements.txt
-```
+> ค่าความดัน/ผลแลป **แก้ไขได้หลังกดยืนยัน** · แพทย์เห็นประวัติครบเพื่อประกอบการตัดสินใจ · ยา 7 กลุ่มมีระบบเตือนยาตีกัน/ซ้ำกลุ่ม และข้อห้ามในผู้ป่วยพิเศษ (ตั้งครรภ์ ฯลฯ)
 
 ---
 
-## ML Backend (optional)
+## ML Backend (ออปชัน)
 
 ```bash
 cd ml
 pip install -r requirements.txt
-python train.py --data "path/to/data.xlsx"
 uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+# ใช้งานได้ทันทีด้วยเกณฑ์คลินิก — เทรน XGBoost จริงด้วย:
+# python train.py --data "path/to/data.xlsx"
 ```
 
 ---
 
-## เชื่อมต่อ Supabase
+## เอกสารเพิ่มเติม
 
-สร้างไฟล์ `.env.local`:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-NEXT_PUBLIC_ML_API_URL=http://localhost:8000   # optional
-```
-
-ถ้าไม่ตั้งค่า `NEXT_PUBLIC_SUPABASE_URL` ระบบจะใช้ Mock Data อัตโนมัติ
-
----
-
-## เอกสารระบบเต็ม
-
-ดูรายละเอียดที่ [HYPERSENSE.md](HYPERSENSE.md)
+- [HYPERSENSE.md](HYPERSENSE.md) — เอกสารระบบฉบับเต็ม (data model, ยา, ML, ฐานข้อมูล)
+- [SOLUTION.md](SOLUTION.md) — สรุปแนวทางสำหรับกรรมการ + เทคโนโลยีระบบจริง + **แผนภาพการทำงาน (Workflow)**

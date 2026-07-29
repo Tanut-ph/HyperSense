@@ -50,6 +50,111 @@ TARGET_LABELS = {
 }
 
 
+def _any_model_available() -> bool:
+    """มีไฟล์ model_<target>.joblib อย่างน้อย 1 ตัวหรือไม่"""
+    return any((MODEL_DIR / f"model_{t}.joblib").exists() for t in TARGET_LABELS)
+
+
+def _severity(prob: float) -> str:
+    return "high" if prob >= 70 else "moderate" if prob >= 50 else "low"
+
+
+def clinical_score_patient(f: Dict[str, float]) -> List[Dict]:
+    """
+    ตัวประเมินความเสี่ยงเชิงคลินิก (rule-based) — ใช้เมื่อยังไม่มีโมเดล XGBoost
+    ทำให้ /predict ตอบผลที่มีความหมายได้ทันที และอธิบายเหตุผลได้โปร่งใส
+    """
+    sbp_mean = f.get("vs_sbp_mean", 0.0) or 0.0
+    sbp_std  = f.get("vs_sbp_std", 0.0) or 0.0
+    hr_last  = f.get("vs_hr_last", 0.0) or 0.0
+    age      = f.get("age", 0.0) or 0.0
+    g = lambda k: 1.0 if f.get(k, 0.0) else 0.0  # noqa: E731
+    lab = lambda k: f.get(k)                      # noqa: E731
+
+    common = []
+    if sbp_mean: common.append(f"SBP เฉลี่ย {sbp_mean:.0f} mmHg")
+    if sbp_std:  common.append(f"ความผันผวน BP {sbp_std:.1f} mmHg")
+    if age:      common.append(f"อายุ {age:.0f} ปี")
+
+    defs = [
+        {
+            "target": "ckd", "p": 0.0, "basis": [],
+            "rules": [
+                (g("co_ckd_base"), 35, "มีประวัติโรคไตเรื้อรัง"),
+                ((lab("lab_potassium_last") or 0) >= 5.0, 12, "โพแทสเซียมสูง"),
+                ((lab("lab_uacr_last") or 0) >= 30, 12, "uACR สูง"),
+                (g("co_dm_base"), 10, "เบาหวานเร่งการเสื่อมของไต"),
+                (sbp_mean >= 150, 12, "ความดันสูงต่อเนื่อง"),
+                (age >= 65, 8, "อายุมาก"),
+            ],
+        },
+        {
+            "target": "cad", "p": 0.0, "basis": [],
+            "rules": [
+                (g("co_cad_base"), 38, "มีประวัติโรคหลอดเลือดหัวใจ"),
+                ((lab("lab_ldl_last") or 0) >= 130, 12, "LDL สูง"),
+                (g("co_dm_base"), 10, "เบาหวานเพิ่มความเสี่ยง"),
+                (sbp_mean >= 150, 12, "ความดันสูง"),
+                (age >= 60, 8, "อายุมาก"),
+            ],
+        },
+        {
+            "target": "hf", "p": 0.0, "basis": [],
+            "rules": [
+                (g("co_hf_base"), 40, "มีภาวะหัวใจล้มเหลว"),
+                (g("co_cad_base"), 14, "มีโรคหลอดเลือดหัวใจร่วม"),
+                ((lab("lab_probnp_last") or 0) >= 125, 16, "NT-proBNP สูง"),
+                (sbp_mean >= 160, 12, "ความดันสูงมาก"),
+                (hr_last >= 95, 8, "หัวใจเต้นเร็ว"),
+            ],
+        },
+        {
+            "target": "stroke", "p": 0.0, "basis": [],
+            "rules": [
+                (g("co_stroke_base"), 40, "มีประวัติโรคหลอดเลือดสมอง"),
+                (g("co_atrial_fibrillation_base"), 16, "มี AF เพิ่มความเสี่ยง stroke"),
+                (sbp_mean >= 160, 14, "ความดันสูงมาก"),
+                (sbp_std >= 15, 10, "ความดันผันผวนสูง"),
+                (age >= 65, 8, "อายุมาก"),
+            ],
+        },
+        {
+            "target": "atrial_fibrillation", "p": 0.0, "basis": [],
+            "rules": [
+                (g("co_atrial_fibrillation_base"), 40, "มีประวัติ AF"),
+                (g("co_arrhythmias_base"), 18, "มีภาวะหัวใจเต้นผิดจังหวะ"),
+                (hr_last >= 100, 12, "หัวใจเต้นเร็ว"),
+                (g("co_hf_base"), 10, "หัวใจล้มเหลวร่วม"),
+                (age >= 65, 8, "อายุมาก"),
+            ],
+        },
+    ]
+
+    results = []
+    for d in defs:
+        prob, reasons = 0.0, []
+        for cond, weight, text in d["rules"]:
+            if cond:
+                prob += weight
+                reasons.append(text)
+        prob = min(95.0, prob)
+        basis = (reasons[:3] if reasons else ["ไม่มีปัจจัยเสี่ยงเด่นชัด"]) + common[:1]
+        results.append({
+            "target":      d["target"],
+            "condition":   TARGET_LABELS[d["target"]],
+            "probability": round(prob, 1),
+            "threshold":   50.0,
+            "positive":    prob >= 50,
+            "severity":    _severity(prob),
+            "shap_top5":   [],
+            "basis":       basis,
+            "model":       "clinical",
+        })
+
+    results.sort(key=lambda r: r["probability"], reverse=True)
+    return results
+
+
 def predict_patient(patient_features: Dict[str, float]) -> List[Dict]:
     """
     รับ dict ของ features → คืน list ของ risk predictions
@@ -67,6 +172,10 @@ def predict_patient(patient_features: Dict[str, float]) -> List[Dict]:
         ...
     }
     """
+    # ยังไม่มีโมเดล XGBoost → ใช้การประเมินเชิงคลินิก (rule-based) เพื่อให้ตอบผลได้ทันที
+    if not _any_model_available():
+        return clinical_score_patient(patient_features)
+
     feature_names = _load_feature_names()
     thresholds    = _load_thresholds()
 
@@ -131,6 +240,8 @@ def predict_patient(patient_features: Dict[str, float]) -> List[Dict]:
             "positive":    positive,
             "severity":    severity,
             "shap_top5":   top_shap,
+            "basis":       [],
+            "model":       "xgboost",
         })
 
     # เรียงตาม probability สูงสุด
@@ -220,16 +331,16 @@ def build_features_from_visit_history(
     # ── Medications ───────────────────────────────────────────────────────
     drug_classes = {m.get("drugClass", "") for m in medications}
     med_map = {
-        "ACEI":  "med_acei",
-        "ARB":   "med_arb",
-        "CCB-DHP":   "med_ccb",
-        "CCB-NonDHP":"med_ccb",
-        "Beta-blocker": "med_beta_blocker",
-        "Diuretic-Thiazide": "med_diuretics",
-        "Diuretic-Loop":     "med_diuretics",
-        "Diuretic-KSparing": "med_diuretics",
-        "Alpha-blocker":     "med_alpha_blocker",
-        "ARNI":  "med_neprilysin_inhibitor",
+        "ACEI":               "med_acei",
+        "ARB":                "med_arb",
+        "CCB":                "med_ccb",
+        "Beta-blocker":       "med_beta_blocker",
+        "Diuretic":           "med_diuretics",
+        "Alpha-blocker":      "med_alpha_blocker",
+        "Alpha2-Agonist":     "med_alpha2_agonist",
+        "ARNI":               "med_neprilysin_inhibitor",
+        "Alpha-Beta-blocker": "med_alpha_beta_blocker",
+        "Direct-Vasodilator": "med_hydralazine",
     }
     seen_meds = set()
     for dc in drug_classes:
